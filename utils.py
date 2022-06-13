@@ -19,11 +19,11 @@ class Topic:
         JSON-ify the passed arguments and publish them to the topic.
         """
         pass
-    
-    # Don't forget to wrap func with a decorator which un-JSON-ifies the published data, before calling func. 
+
     def subscribe(func: Callable) -> None:
         """
         Subscribe the passed function to the topic, and call it with the published kwargs.
+        IMPORTANT: Don't forget to wrap func with a decorator which un-JSON-ifies the published data, before calling func. 
         """
         pass 
 
