@@ -1,5 +1,4 @@
 
-
 from abc import ABC
 from typing import Callable
 
@@ -20,12 +19,29 @@ class Topic:
         """
         pass
     
-    # Don't forget to wrap func with a decorator which un-JSON-ifies the published data, before calling func. 
+    # Note to self: Don't forget to wrap func with a decorator which un-JSON-ifies the published data, before calling func. 
     def subscribe(func: Callable) -> None:
         """
         Subscribe the passed function to the topic, and call it with the published kwargs.
         """
         pass 
+
+
+class BaseAlgorithm(ABC):
+    """
+    This class is temporary & should be replaced with Gil's abstract base class
+    """
+    pass
+
+
+class BaseDestinator(ABC):
+    """
+    Base class for the Destinator component.
+    Destinators simply implement an algorithm for destinating agents to goals, given a set of agent & goal locations.
+    """
+    
+    def destinate(self, agents, goals):
+        raise NotImplementedError("Destinator method 'destinate' is not implemented!")
 
 
 class BasePlanner(ABC):
@@ -36,25 +52,32 @@ class BasePlanner(ABC):
     If you want to implement a new planner, please inherit from this class (inheritance will be checked).
     """
 
-    def __init__(self, executors_topic, tf_topic ) -> None:
-        """
-        Init is called once when configurator initiates the system.
-        In init the planner should only take arguments that provide a constant interface throughout the entire execution,
-        instead of having them passed on everytime plan is called.
-        * exeuctors_topic - an instance which provides an interface which the planner could publish through to executors.
-        * 
-        """
-        raise NotImplementedError
+    def __init__(
+        self, 
+        executors_topic: Topic, 
+        tf_topic: Topic, 
+        destinator: BaseDestinator,
+        mapf_solver: BaseAlgorithm
+    ) -> None:
+        raise NotImplementedError("Planner method '__init__' is not implemented!")
 
-    # To be decided - arguments 
-    def plan(*args, **kwargs):
-        raise NotImplementedError
-
-
-class BaseDestinator(ABC):
-    pass
+    def plan(self, **kwargs) -> None:
+        raise NotImplementedError("Planner method 'plan' is not implemented!")
 
 
 class BaseManager(ABC):
-    pass
+    """
+    Base class for the Manager component.
+    A manager will "manage" the execution of the system. In a sense, the manager is responsible for:
+    A. Publishing new plan requests to the Planner
+    B. Handling incoming messages from the agents
+    (Note that A. is usually triggered by B.)
+    Inherently, the manager also manages the goal list (otherwise how would it know when to request new plans).
+    """
+    
+    def __init__(self) -> None:
+        raise NotImplementedError("Manager method '__init__' is not implemented!")
 
+    def manage(self, msg, sender) -> None:
+        pass
+    
