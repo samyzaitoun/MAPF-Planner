@@ -20,7 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'integration_node = arch_test.test_interfaces:main'
+            'test_interfaces = arch_test.test_interfaces:main'
         ],
     },
 )

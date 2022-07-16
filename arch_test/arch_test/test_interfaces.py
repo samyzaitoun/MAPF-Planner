@@ -12,12 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Callable
+from typing import Callable, Dict, Iterable, Tuple
 import rclpy
 from rclpy.node import Node
 
-from arch_interfaces.msg import Position, Goal, Plan
-
+from arch_interfaces.msg import (
+    Position, 
+    Goal, 
+    Plan, 
+    Waypoint, 
+    Waypoints, 
+    Map2D,
+    Point2D,
+    Path2D,
+    Paths2D
+)
 
 
 class IntegrationNode(Node):
@@ -45,12 +54,24 @@ class IntegrationNode(Node):
         while rclpy.ok() and self.received_msg is None:
             rclpy.spin_once(self)
         if self.published_msg == self.received_msg:
-            print(f"Message Type {name_type} transferred successfully!")
-            print(f"Message Received: {self.received_msg}")
+            print(f"Message Type {name_type} transferred successfully: Yes")
         else:
-            print(f"Message Type {name_type} did not transfer successfully :(")
+            print(f"Message Type {name_type} transferred successfully: No")
         
 
+def test_interface_list(type_list: Iterable[Tuple[Callable, str, Dict]]):
+    """
+    Format of type_list: 
+    (Type, "TypeName", {Parameters : Values})
+    """
+    for t in type_list:
+        test_type = IntegrationNode(t[0])
+        test_type.test(
+            name_type=t[1],
+            **t[2]
+        )
+        test_type.destroy_node()
+    
 
 
 def main(args=None):
@@ -75,16 +96,53 @@ def main(args=None):
                 Goal(pos=Position(x=-1.0, y=-1.0, z=-1.0, w=90.0))
             ]
         }
+        ),
+        (Waypoint, "Waypoint",
+        {
+            'point': 1
+        }
+        ),
+        (Waypoints, "Waypoints",
+        {
+            'points': [
+                Waypoint(point=1),
+                Waypoint(point=2),
+                Waypoint(point=3)
+            ]
+        }
+        ),
+        (Map2D, "Map2D",
+        {
+            'map': [
+                Waypoints(points=[Waypoint(point=1), Waypoint(point=2), Waypoint(point=0)]),
+                Waypoints(points=[Waypoint(point=0), Waypoint(point=0), Waypoint(point=3)]),
+                Waypoints(points=[Waypoint(point=4), Waypoint(point=5), Waypoint(point=0)]),
+            ]
+        }
+        ),
+        (Point2D, "Point2D",
+        {
+            'row': 0,
+            'col': 1
+        }
+        ),
+        (Path2D, "Path2D",
+        {
+            'path': [Point2D(row=0, col=0), Point2D(row=0, col=1)],
+            'agent_id': 0
+        }
+        ),
+        (Paths2D, "Paths2D",
+        {
+            'paths': [
+                Path2D(path=[], agent_id=0),
+                Path2D(path=[], agent_id=1),
+                Path2D(path=[], agent_id=2)
+            ]
+        }
         )
     ]
-    for t in type_list:
-        test_type = IntegrationNode(t[0])
-        test_type.test(
-            name_type=t[1],
-            **t[2]
-        )
-        test_type.destroy_node()
-
+    test_interface_list(type_list)
     rclpy.shutdown()
 
 

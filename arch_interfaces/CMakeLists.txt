@@ -40,6 +40,14 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Position.msg"
   "msg/Goal.msg"
   "msg/Plan.msg"
+  "msg/Waypoint.msg"
+  "msg/Waypoints.msg"
+  "msg/Map2D.msg"
+  "msg/Point2D.msg"
+  "msg/Path2D.msg"
+  "msg/Paths2D.msg"
+  "srv/GenerateMap.srv"
+  
 )
 
 ament_package()

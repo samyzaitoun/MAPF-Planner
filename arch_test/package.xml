@@ -5,7 +5,7 @@
   <version>0.0.0</version>
   <description>Integration Testing Package</description>
   <maintainer email="samyzaitoun@campus.technion.ac.il">samuel</maintainer>
-  <license>Apache License 2.0<</license>
+  <license>Apache License 2.0</license>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
