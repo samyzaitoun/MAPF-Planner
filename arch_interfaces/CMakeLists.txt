@@ -36,18 +36,9 @@ find_package(rosidl_default_generators REQUIRED)
 
 # Add here any msgs/srvs defined
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/Paths.msg"
   "msg/Position.msg"
   "msg/Goal.msg"
-  "msg/Plan.msg"
-  "msg/Waypoint.msg"
-  "msg/Waypoints.msg"
-  "msg/Map2D.msg"
-  "msg/Point2D.msg"
-  "msg/Path2D.msg"
-  "msg/Paths2D.msg"
-  "srv/GenerateMap.srv"
-  
+  "msg/PlanRequest.msg"
 )
 
 ament_package()

@@ -19,13 +19,7 @@ from rclpy.node import Node
 from arch_interfaces.msg import (
     Position, 
     Goal, 
-    Plan, 
-    Waypoint, 
-    Waypoints, 
-    Map2D,
-    Point2D,
-    Path2D,
-    Paths2D
+    PlanRequest, 
 )
 
 
@@ -89,55 +83,11 @@ def main(args=None):
             'pos': Position(x=1.0, y=2.0, z=3.0, w=0.0),
             'agent_id': 5
         }),
-        (Plan, "Plan",
+        (PlanRequest, "PlanRequest",
         {
             'goals': [
                 Goal(pos=Position(x=1.0, y=2.0, z=3.0, w=0.0), agent_id=1),
                 Goal(pos=Position(x=-1.0, y=-1.0, z=-1.0, w=90.0))
-            ]
-        }
-        ),
-        (Waypoint, "Waypoint",
-        {
-            'point': 1
-        }
-        ),
-        (Waypoints, "Waypoints",
-        {
-            'points': [
-                Waypoint(point=1),
-                Waypoint(point=2),
-                Waypoint(point=3)
-            ]
-        }
-        ),
-        (Map2D, "Map2D",
-        {
-            'map': [
-                Waypoints(points=[Waypoint(point=1), Waypoint(point=2), Waypoint(point=0)]),
-                Waypoints(points=[Waypoint(point=0), Waypoint(point=0), Waypoint(point=3)]),
-                Waypoints(points=[Waypoint(point=4), Waypoint(point=5), Waypoint(point=0)]),
-            ]
-        }
-        ),
-        (Point2D, "Point2D",
-        {
-            'row': 0,
-            'col': 1
-        }
-        ),
-        (Path2D, "Path2D",
-        {
-            'path': [Point2D(row=0, col=0), Point2D(row=0, col=1)],
-            'agent_id': 0
-        }
-        ),
-        (Paths2D, "Paths2D",
-        {
-            'paths': [
-                Path2D(path=[], agent_id=0),
-                Path2D(path=[], agent_id=1),
-                Path2D(path=[], agent_id=2)
             ]
         }
         )

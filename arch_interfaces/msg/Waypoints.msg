@@ -1,1 +1,0 @@
-Waypoint[] points

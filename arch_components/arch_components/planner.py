@@ -2,18 +2,19 @@
 import rclpy
 from rclpy.node import Node, Publisher, Subscription
 
-# Plan & Transform still not defined
-from arch_interfaces.msg import Paths, Plan, Transform # type: ignore
+from tf2_ros import TransformException, TransformStamped
+from tf2_ros.buffer import Buffer
+from tf2_ros.transform_listener import TransformListener
 
 
-class LifeLongPlanner(Node):
+class Planner(Node):
     curr_frame = None
     publisher: Publisher = None
     plan_subscription: Subscription = None
     tf_subscription: Subscription = None
      
     def __init__(self, path_topic: str, plan_topic: str, tf_topic: str):
-        super().__init__('lifelong_planner')
+        super().__init__('planner_component')
         self.curr_frame = None
         self.publisher = self.create_publisher(Paths, path_topic, 1)
         self.plan_subscription = self.create_subscription(
