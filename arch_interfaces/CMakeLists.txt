@@ -37,8 +37,8 @@ find_package(rosidl_default_generators REQUIRED)
 # Add here any msgs/srvs defined
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Position.msg"
-  "msg/Goal.msg"
-  "msg/PlanRequest.msg"
+  "msg/AssignedGoal.msg"
+  "srv/PlanRequest.srv"
 )
 
 ament_package()
