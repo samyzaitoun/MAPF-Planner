@@ -16,9 +16,27 @@ from mapf_solver.Abstract_objects.mapf_solver import MAPFSolver, MAPFInput, MAPF
 from mapf_solver.Abstract_objects.path import Path
 from mapf_solver.Concrete_objects.concrete_waypoints import TimedWayPoint
 
-from goal_assigner import GoalAssigner, AssigningGoalsException
+from mapf_solver.MAPFSolvers.pbs import CBSInput, CBSSolver, PBSInput, PBSSolver
+from mapf_solver.MAPFSolvers.dict_cbs import DictCBSSolver
+from mapf_solver.MAPFSolvers.prioritized import PrioritizedPlanningSolver
+
+from goal_assigner import GoalAssigner, AssigningGoalsException, SimpleGoalAssigner
+
 
 NO_TIME_LIMIT = -1
+
+SOLVER_DICT = {
+    "CBSSolver": CBSSolver,
+    "PBSSolver": PBSSolver,
+    "DictCBSSolver": DictCBSSolver,
+    "PrioritizedPlanningSolver": PrioritizedPlanningSolver,
+    "CBSInput": CBSInput,
+    "PBSInput": PBSInput,
+}
+
+ASSIGNER_DICT = {
+    "SimpleGoalAssigner": SimpleGoalAssigner
+}
 
 
 class Planner(Node):
@@ -53,10 +71,10 @@ class Planner(Node):
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
         # Initialize algorithm solver class
-        self.mapf_solver = self.mapf_solver_class(self.time_limit)
+        self.mapf_solver: MAPFSolver = SOLVER_DICT[self.mapf_solver_class](self.time_limit)
 
         # set goal assigning algorithem
-        self.assign_goals_to_agents = self.goal_assigner_class.assign_goals_to_agents
+        self.goal_assigner: GoalAssigner = ASSIGNER_DICT[self.goal_assigner_class]()
 
     def get_launch_parameters(self) -> None:
 
@@ -84,24 +102,29 @@ class Planner(Node):
             self.get_parameter("agent_diameter").get_parameter_value().integer_value
         )
 
-        ## MAPF Algorithm Class (MAPFSolver)
+        ## MAPF Algorithm Class (str)
         self.declare_parameter("mapf_solver")
-        self.mapf_solver_class: Type[MAPFSolver] = self.get_parameter(
-            "mapf_solver"
-        ).get_parameter_value()  # Not Defined, should work..?
+        self.mapf_solver_class: str = (
+            self.get_parameter("mapf_solver").get_parameter_value().string_value
+        )
+        if self.mapf_solver_class not in SOLVER_DICT:
+            raise AssertionError("Solver class not in Planner dictionary. Please update it (inside Planner.py).")
 
-        # copied from  MAPF Algorithm Class, TODO: check it works and delete this comment
-        ## goal assign Algorithm Class (goal_assigner)
-        self.declare_parameter("goal_assigner")
-        self.goal_assigner_class: Type[GoalAssigner] = self.get_parameter(
-            "goal_assigner"
-        ).get_parameter_value()  # Not Defined, should work..?
-
-        ## MAPF Algorithm Input Class (MAPFInput)
+        ## MAPF Algorithm Input Class (str)
         self.declare_parameter("mapf_input")
-        self.mapf_input_class: Type[MAPFInput] = self.get_parameter(
-            "mapf_input"
-        ).get_parameter_value()  # Not Defined, should work..?
+        self.mapf_input_class: str = (
+            self.get_parameter("mapf_input").get_parameter_value().string_value
+        )
+        if self.mapf_solver_class not in SOLVER_DICT:
+            raise AssertionError("Solver Input class not in Planner dictionary. Please update it (inside Planner.py).")
+
+        ## goal assign Algorithm Class (str)
+        self.declare_parameter("goal_assigner")
+        self.goal_assigner_class: str = (
+            self.get_parameter("goal_assigner").get_parameter_value().string_value
+        )
+        if self.goal_assigner_class not in ASSIGNER_DICT:
+            raise AssertionError("Assigner class not in Planner dictionary. Please update it (inside Planner.py).")
 
         ## MAPF Algorithm Time limit (float)
         self.declare_parameter("time_limit", NO_TIME_LIMIT)
@@ -117,10 +140,8 @@ class Planner(Node):
         unassigned_agents: Iterable[str] = request.unassigned_agents
 
         # Assign goals
-        # TODO: Define & Implement assignment class
-
         try:
-            assigned_goals += self.assign_goals_to_agents(
+            assigned_goals += self.goal_assigner.assign_goals_to_agents(
                 unassigned_goals, unassigned_agents
             )
         except AssigningGoalsException as ex:
@@ -239,7 +260,7 @@ class Planner(Node):
             obstacle_map[obstacle_row][obstacle_col] = True
 
         # Initialize algorithm input
-        mapf_input: MAPFInput = self.mapf_input_class(
+        mapf_input: MAPFInput = SOLVER_DICT[self.mapf_input_class](
             map_instance=obstacle_map,
             starts_list=discrete_agents,
             goals_list=discrete_goals,
