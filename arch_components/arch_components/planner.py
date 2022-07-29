@@ -1,5 +1,7 @@
 
 from typing import Iterable, List, Tuple, Type
+import yaml
+
 import rclpy
 from rclpy.node import Node, Publisher, Subscription
 
@@ -96,26 +98,40 @@ class Planner(Node):
         # TODO: Define & Implement assignment class
         assigned_goals += self.assign_goals_to_agents(unassigned_goals, unassigned_agents)
 
-        # Unpack message layers (not fun to work with 2 layers of indirection)
+        # Unpack message layers
         assigned_goals: List[Tuple[str, Position]] = [(m.agent_id, m.pos) for m in assigned_goals]
 
-        # TODO: Understand how to pull obstacle transformations
+        # Load all object frames on scene (Agents/Arena will be removed)
+        obstacle_ids = set(yaml.safe_load(self.tf_buffer.all_frames_as_yaml()).keys()) # This code is SUS
+
+        # Retrieve agent/obstacle locations in arena
+        agent_transformations = []
         obstacle_transformations = []
 
-        # Retrieve agents' locations in arena
-        agent_transformations = []
         try:
+            obstacle_ids.discard(self.arena_frame)
             now = rclpy.time.Time()
             for agent_id, _ in assigned_goals:
                 agent_transformations += self.tf_buffer.lookup_transform(
                     agent_id,
-                        self.arena_frame,
-                        now   
+                    self.arena_frame,
+                    now   
+                )
+                # Anything that's NOT an agent, is an obstacle
+                obstacle_ids.discard(agent_id)
+            
+            for obstacle_id in obstacle_ids:
+                obstacle_transformations += self.tf_buffer.lookup_transform(
+                    obstacle_id,
+                    self.arena_frame,
+                    now
                 )
         except TransformException as ex:
             self.get_logger().info(
                 f'Could not transform {agent_id} to {self.arena_frame}: {ex}')
-            return
+            response.error_msg = "NO_AGENT_TRANSFORM"
+            response.args = [agent_id]
+            return response
 
         # Solve MAPF using data
         try:
@@ -137,7 +153,7 @@ class Planner(Node):
         # B. Transform the paths from our Discretized map to scene transforms
         # (Remember to add them relative to mocap's transform)
         # C. Publish them, and return a 'success' response to whoever initiated the plan request.
-        
+
         # msg_publish = Paths()
         # msg_publish.paths = paths
         # self.publisher.publish(msg_publish)
