@@ -3,6 +3,8 @@ from typing import Iterable, List
 from arch_interfaces.msg import Position, AssignedGoal
 from tf2_ros import ROSException
 
+from arch_interfaces.msg import AssignedGoal
+
 
 class GoalAssigner(ABC):
     @abstractmethod
@@ -34,4 +36,7 @@ class SimpleGoalAssigner(GoalAssigner):
         if len(unassigned_goals) != len(unassigned_agents):
             raise AssigningGoalsException(len(unassigned_agents), len(unassigned_goals))
         # assignes the goals by the order of the lists
-        return zip(unassigned_goals, unassigned_agents)
+        return [
+            AssignedGoal(pos=goal, agent_id=agent_id) 
+            for goal, agent_id in zip(unassigned_goals, unassigned_agents)
+        ]

@@ -3,4 +3,4 @@ Position[] unassigned_goals
 string[] unassigned_agents
 ---
 string error_msg
-string[] args []
+string[] args

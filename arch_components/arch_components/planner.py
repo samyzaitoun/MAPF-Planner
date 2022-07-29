@@ -1,11 +1,13 @@
+from gettext import translation
 from typing import Iterable, List, Tuple, Type
 import yaml
 
 import rclpy
 from rclpy.node import Node, Publisher, Subscription
 
-from arch_interfaces.msg import AssignedGoal, Position
+from arch_interfaces.msg import AssignedGoal, Position, AssignedPath, AgentPaths
 from arch_interfaces.srv import PlanRequest
+from geometry_msgs.msg import Transform, Vector3
 
 from tf2_ros import TransformException, TransformStamped
 from tf2_ros.buffer import Buffer
@@ -59,8 +61,8 @@ class Planner(Node):
             PlanRequest, "plan_request", self.plan_callback
         )
 
-        # TODO: Create Publisher to Plan topic
-        # self.publisher = self.create_publisher(Paths, path_topic, 1)
+        # Create Publisher to Plan topic
+        self.publisher = self.create_publisher(AgentPaths, "agent_paths", 1)
 
         # Calculate constant values
         self.rows = int(self.arena_height / self.agent_diameter)
@@ -139,22 +141,28 @@ class Planner(Node):
         unassigned_goals: Iterable[Position] = request.unassigned_goals
         unassigned_agents: Iterable[str] = request.unassigned_agents
 
+
         # Assign goals
         try:
             assigned_goals += self.goal_assigner.assign_goals_to_agents(
                 unassigned_goals, unassigned_agents
             )
         except AssigningGoalsException as ex:
-            response.error_msg = str(ex)
+            response.error_msg = "FAILED_GOAL_ASSIGN"
+            response.args = [str(ex)]
             return response
+
 
         # Unpack message layers (not fun to work with 2 layers of indirection)
         assigned_goals: List[Tuple[str, Position]] = [
             (m.agent_id, m.pos) for m in assigned_goals
         ]
 
+
+
         # Load all object frames on scene (Agents/Arena will be removed)
         obstacle_ids = set(yaml.safe_load(self.tf_buffer.all_frames_as_yaml()).keys()) # This code is SUS
+
 
         # Retrieve agent/obstacle locations in arena
         agent_transformations = []
@@ -185,6 +193,7 @@ class Planner(Node):
             response.args = [agent_id]
             return response
 
+
         # Solve MAPF using data
         try:
             mapf_solution = self.generate_and_solve_map(
@@ -197,16 +206,28 @@ class Planner(Node):
             return response
 
         agent_paths: List[Path] = mapf_solution.paths
+        # The results are ordered by agent order we sent (assigned_goals sets the order)
 
-        # TODO:
-        # A. Figure out what message type we agree on
-        # B. Transform the paths from our Discretized map to scene transforms
-        # (Remember to add them relative to mocap's transform)
-        # C. Publish them, and return a 'success' response to whoever initiated the plan request.
 
-        # msg_publish = Paths()
-        # msg_publish.paths = paths
-        # self.publisher.publish(msg_publish)
+        # Transform the paths from our Discretized map to scene transforms
+        agent_transform_paths = AgentPaths()
+        agent_transform_paths.agent_paths = [
+            AssignedPath(
+                agent_id=a_goal[0],
+                path=[
+                    self.revert_position_to_transform(pos, self.arena_frame)
+                    for pos in path.path
+                ]
+            )
+            for a_goal, path in zip(assigned_goals, agent_paths)
+        ]
+
+        self.publisher.publish(agent_transform_paths)
+
+        response.error_msg = "SUCCESS"
+        response.args = [""]
+
+        return response
 
     def generate_and_solve_map(
         self,
@@ -233,8 +254,8 @@ class Planner(Node):
         # Discretize agent, goal & obstacle positions into board
         discrete_agents = [
             WayPoint(
-                x=int(agent.x / self.agent_diameter),
-                y=int(agent.z / self.agent_diameter),
+                x=int(agent.transform.translation.x / self.agent_diameter),
+                y=int(agent.transform.translation.z / self.agent_diameter),
             )
             for agent in agents
         ]
@@ -248,8 +269,8 @@ class Planner(Node):
         ]
         discrete_obstacles = [
             (
-                int(obstacle.x / self.agent_diameter),
-                int(obstacle.z / self.agent_diameter),
+                int(obstacle.transform.translation.x / self.agent_diameter),
+                int(obstacle.transform.translation.z / self.agent_diameter),
             )
             for obstacle in obstacles
         ]
@@ -275,3 +296,12 @@ class Planner(Node):
         In the library, a 2D list of bools represent empty & taken positions (False = Empty, True = Taken)
         """
         return [[False] * self.cols] * self.rows
+    
+    def revert_position_to_transform(pos: WayPoint, arena: TransformStamped) -> Transform:
+        return Transform(
+            translation=Vector3(
+                x = pos.x + arena.transform.translation.x,
+                y = arena.transform.translation.y,
+                z = pos.y + arena.transform.translation.z
+            )
+        )
