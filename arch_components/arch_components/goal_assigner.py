@@ -4,7 +4,7 @@ from arch_interfaces.msg import Position, AssignedGoal
 from tf2_ros import ROSException
 
 
-class goalAssigner(ABC):
+class GoalAssigner(ABC):
     @abstractmethod
     def assign_goals_to_agents(
         self, unassigned_goals: Iterable[Position], unassigned_agents: Iterable[str]
@@ -12,7 +12,7 @@ class goalAssigner(ABC):
         pass
 
 
-class assigningGoalsException(ROSException):
+class AssigningGoalsException(ROSException):
     def __init__(
         self,
         agents: int,
@@ -27,11 +27,11 @@ class assigningGoalsException(ROSException):
         )
 
 
-class simpleGoalAssigner(goalAssigner):
+class SimpleGoalAssigner(GoalAssigner):
     def assign_goals_to_agents(
         self, unassigned_goals: Iterable[Position], unassigned_agents: Iterable[str]
     ) -> List[AssignedGoal]:
         if len(unassigned_goals) != len(unassigned_agents):
-            raise assigningGoalsException(len(unassigned_agents), len(unassigned_goals))
+            raise AssigningGoalsException(len(unassigned_agents), len(unassigned_goals))
         # assignes the goals by the order of the lists
         return zip(unassigned_goals, unassigned_agents)
