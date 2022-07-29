@@ -16,7 +16,7 @@ from mapf_solver.Abstract_objects.mapf_solver import MAPFSolver, MAPFInput, MAPF
 from mapf_solver.Abstract_objects.path import Path
 from mapf_solver.Concrete_objects.concrete_waypoints import TimedWayPoint
 
-from goal_assigner import goalAssigner, assigningGoalsException
+from goal_assigner import GoalAssigner, AssigningGoalsException
 
 NO_TIME_LIMIT = -1
 
@@ -93,7 +93,7 @@ class Planner(Node):
         # copied from  MAPF Algorithm Class, TODO: check it works and delete this comment
         ## goal assign Algorithm Class (goal_assigner)
         self.declare_parameter("goal_assigner")
-        self.goal_assigner_class: Type[goalAssigner] = self.get_parameter(
+        self.goal_assigner_class: Type[GoalAssigner] = self.get_parameter(
             "goal_assigner"
         ).get_parameter_value()  # Not Defined, should work..?
 
@@ -123,7 +123,7 @@ class Planner(Node):
             assigned_goals += self.assign_goals_to_agents(
                 unassigned_goals, unassigned_agents
             )
-        except assigningGoalsException as ex:
+        except AssigningGoalsException as ex:
             response.error_msg = str(ex)
             return response
 
