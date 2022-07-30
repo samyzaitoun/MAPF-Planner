@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Iterable, List
+from typing import Iterable, List, Tuple
 from arch_interfaces.msg import Position, AssignedGoal
-from tf2_ros import ROSException
+from tf2_ros import ROSException, TransformStamped
 
 from arch_interfaces.msg import AssignedGoal
 
@@ -9,7 +9,9 @@ from arch_interfaces.msg import AssignedGoal
 class GoalAssigner(ABC):
     @abstractmethod
     def assign_goals_to_agents(
-        self, unassigned_goals: Iterable[Position], unassigned_agents: Iterable[str]
+        self, 
+        unassigned_goals: Iterable[Position], 
+        unassigned_agents: Iterable[Tuple[str, TransformStamped]]
     ) -> List[AssignedGoal]:
         pass
 
@@ -31,12 +33,14 @@ class AssigningGoalsException(ROSException):
 
 class SimpleGoalAssigner(GoalAssigner):
     def assign_goals_to_agents(
-        self, unassigned_goals: Iterable[Position], unassigned_agents: Iterable[str]
+        self, 
+        unassigned_goals: Iterable[Position], 
+        unassigned_agents: Iterable[Tuple[str, TransformStamped]]
     ) -> List[AssignedGoal]:
         if len(unassigned_goals) != len(unassigned_agents):
             raise AssigningGoalsException(len(unassigned_agents), len(unassigned_goals))
-        # assignes the goals by the order of the lists
+        # assigns the goals by the order of the lists
         return [
-            AssignedGoal(pos=goal, agent_id=agent_id) 
-            for goal, agent_id in zip(unassigned_goals, unassigned_agents)
+            AssignedGoal(pos=goal, agent_id=agent[0]) 
+            for goal, agent in zip(unassigned_goals, unassigned_agents)
         ]

@@ -56,15 +56,11 @@ class Planner(Node):
         # Retrieve launch parameters
         self.get_launch_parameters()
 
-        # Create Service PlanRequest
         self.plan_srv = self.create_service(
             PlanRequest, "plan_request", self.plan_callback
         )
-
-        # Create Publisher to Plan topic
         self.publisher = self.create_publisher(AgentPaths, "agent_paths", 1)
 
-        # Calculate constant values
         self.rows = int(self.arena_height / self.agent_diameter)
         self.cols = int(self.arena_width / self.agent_diameter)
 
@@ -72,39 +68,37 @@ class Planner(Node):
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
-        # Initialize algorithm solver class
         self.mapf_solver: MAPFSolver = SOLVER_DICT[self.mapf_solver_class](self.time_limit)
 
-        # set goal assigning algorithem
         self.goal_assigner: GoalAssigner = ASSIGNER_DICT[self.goal_assigner_class]()
 
     def get_launch_parameters(self) -> None:
 
-        ##  Arena transform tf name (str)
+        ##  Arena transform tf name
         self.declare_parameter("tf_tag_arena", "arena")
         self.arena_frame: str = (
             self.get_parameter("tf_tag_arena").get_parameter_value().string_value
         )
 
-        ## Arena height (int)
+        ## Arena height
         self.declare_parameter("arena_height")
         self.arena_height: int = (
             self.get_parameter("arena_height").get_parameter_value().integer_value
         )
 
-        ## Arena width (int)
+        ## Arena width
         self.declare_parameter("arena_width")
         self.arena_width: int = (
             self.get_parameter("arena_width").get_parameter_value().integer_value
         )
 
-        ## Agent diameter (int)
+        ## Agent diameter
         self.declare_parameter("agent_diameter")
         self.agent_diameter: int = (
             self.get_parameter("agent_diameter").get_parameter_value().integer_value
         )
 
-        ## MAPF Algorithm Class (str)
+        ## MAPF Algorithm Class
         self.declare_parameter("mapf_solver")
         self.mapf_solver_class: str = (
             self.get_parameter("mapf_solver").get_parameter_value().string_value
@@ -112,7 +106,7 @@ class Planner(Node):
         if self.mapf_solver_class not in SOLVER_DICT:
             raise AssertionError("Solver class not in Planner dictionary. Please update it (inside Planner.py).")
 
-        ## MAPF Algorithm Input Class (str)
+        ## MAPF Algorithm Input Class
         self.declare_parameter("mapf_input")
         self.mapf_input_class: str = (
             self.get_parameter("mapf_input").get_parameter_value().string_value
@@ -120,7 +114,7 @@ class Planner(Node):
         if self.mapf_solver_class not in SOLVER_DICT:
             raise AssertionError("Solver Input class not in Planner dictionary. Please update it (inside Planner.py).")
 
-        ## goal assign Algorithm Class (str)
+        ## goal assign Algorithm Class
         self.declare_parameter("goal_assigner")
         self.goal_assigner_class: str = (
             self.get_parameter("goal_assigner").get_parameter_value().string_value
@@ -128,7 +122,7 @@ class Planner(Node):
         if self.goal_assigner_class not in ASSIGNER_DICT:
             raise AssertionError("Assigner class not in Planner dictionary. Please update it (inside Planner.py).")
 
-        ## MAPF Algorithm Time limit (float)
+        ## MAPF Algorithm Time limit
         self.declare_parameter("time_limit", NO_TIME_LIMIT)
         self.time_limit: float = (
             self.get_parameter("time_limit").get_parameter_value().double_value
@@ -141,27 +135,15 @@ class Planner(Node):
         unassigned_goals: Iterable[Position] = request.unassigned_goals
         unassigned_agents: Iterable[str] = request.unassigned_agents
 
-
-        # Assign goals
-        try:
-            assigned_goals += self.goal_assigner.assign_goals_to_agents(
-                unassigned_goals, unassigned_agents
-            )
-        except AssigningGoalsException as ex:
-            response.error_msg = "FAILED_GOAL_ASSIGN"
-            response.args = [str(ex)]
-            return response
+        agent_ids = unassigned_agents + [m.agent_id for m in assigned_goals]
 
 
-        # Unpack message layers (not fun to work with 2 layers of indirection)
-        assigned_goals: List[Tuple[str, Position]] = [
-            (m.agent_id, m.pos) for m in assigned_goals
-        ]
-
-
-
-        # Load all object frames on scene (Agents/Arena will be removed)
-        obstacle_ids = set(yaml.safe_load(self.tf_buffer.all_frames_as_yaml()).keys()) # This code is SUS
+        # Load all object ids on scene 
+        obstacle_ids = set(
+            yaml.safe_load(
+                self.tf_buffer.all_frames_as_yaml()
+            ).keys()
+        ).difference(agent_ids) # This code is SUS
 
 
         # Retrieve agent/obstacle locations in arena
@@ -169,22 +151,25 @@ class Planner(Node):
         obstacle_transformations = []
 
         try:
-            obstacle_ids.discard(self.arena_frame)
             now = rclpy.time.Time()
-            for agent_id, _ in assigned_goals:
-                agent_transformations += self.tf_buffer.lookup_transform(
-                    agent_id,
-                    self.arena_frame,
-                    now   
+            for agent_id in agent_ids:
+                agent_transformations.append(
+                    self.tf_buffer.lookup_transform(
+                        agent_id,
+                        self.arena_frame,
+                        now
+                    )   
                 )
-                # Anything that's NOT an agent, is an obstacle
-                obstacle_ids.discard(agent_id)
             
+            # The following code should theoretically never cause an exception
+            obstacle_ids.discard(self.arena_frame) # Mocap isn't an obstacle in our arena
             for obstacle_id in obstacle_ids:
-                obstacle_transformations += self.tf_buffer.lookup_transform(
-                    obstacle_id,
-                    self.arena_frame,
-                    now
+                obstacle_transformations.append(
+                    self.tf_buffer.lookup_transform(
+                        obstacle_id,
+                        self.arena_frame,
+                        now
+                    )
                 )
         except TransformException as ex:
             self.get_logger().info(
@@ -192,6 +177,24 @@ class Planner(Node):
             response.error_msg = "NO_AGENT_TRANSFORM"
             response.args = [agent_id]
             return response
+
+
+        # Assign goals
+        try:
+            assigned_goals += self.goal_assigner.assign_goals_to_agents(
+                unassigned_goals, 
+                zip(agent_ids[0:len(unassigned_agents)], agent_transformations[0:len(unassigned_agents)])
+            )
+        except AssigningGoalsException as ex:
+            response.error_msg = "FAILED_GOAL_ASSIGN"
+            response.args = [str(ex)]
+            return response
+
+
+        # Unpack message layers (Overwrite variable type)
+        assigned_goals: List[Tuple[str, Position]] = [
+            (m.agent_id, m.pos) for m in assigned_goals
+        ]
 
 
         # Solve MAPF using data
@@ -202,7 +205,8 @@ class Planner(Node):
         except Exception as e:
             # Just pointing this out that the library throws errors directly inherited from Exception (!!!)
             # Someone please fix their inheritance to AssertionError!
-            response.error_msg = str(e)
+            response.error_msg = "FAILED_MAP_SOLVE"
+            response.args = [str(e)]
             return response
 
         agent_paths: List[Path] = mapf_solution.paths
@@ -278,6 +282,8 @@ class Planner(Node):
         for obstacle in discrete_obstacles:
             # X is col, Y is row (under our representation)
             obstacle_row, obstacle_col = obstacle[1], obstacle[0]
+            if obstacle_row > self.rows or obstacle_col > self.cols or obstacle_row < 0 or obstacle_col < 0:
+                continue # Outside bound obstacles are not an issue :)
             obstacle_map[obstacle_row][obstacle_col] = True
 
         # Initialize algorithm input
