@@ -20,7 +20,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'test_interfaces = arch_test.test_interfaces:main'
+            'test_interfaces = arch_test.test_interfaces:main',
+            'test_planner = arch_test.test_planner:main',
         ],
     },
 )

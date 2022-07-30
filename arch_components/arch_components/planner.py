@@ -1,4 +1,5 @@
 
+import math
 from typing import Iterable, List, Tuple, Type
 import yaml
 
@@ -16,6 +17,7 @@ from tf2_ros.transform_listener import TransformListener
 from mapf_solver.Abstract_objects.waypoint import WayPoint
 from mapf_solver.Abstract_objects.mapf_solver import MAPFSolver, MAPFInput, MAPFOutput
 from mapf_solver.Abstract_objects.path import Path
+from mapf_solver.Abstract_objects.map_instance import MapfInstance
 from mapf_solver.Concrete_objects.concrete_waypoints import TimedWayPoint
 
 from mapf_solver.MAPFSolvers.pbs import CBSInput, CBSSolver, PBSInput, PBSSolver
@@ -25,7 +27,7 @@ from mapf_solver.MAPFSolvers.prioritized import PrioritizedPlanningSolver
 from .goal_assigner import GoalAssigner, AssigningGoalsException, SimpleGoalAssigner
 
 
-NO_TIME_LIMIT = -1
+NO_TIME_LIMIT = math.inf
 
 SOLVER_DICT = {
     "CBSSolver": CBSSolver,
@@ -83,25 +85,25 @@ class Planner(Node):
         )
 
         ## Arena height
-        self.declare_parameter("arena_height")
+        self.declare_parameter("arena_height", 600)
         self.arena_height: int = (
             self.get_parameter("arena_height").get_parameter_value().integer_value
         )
 
         ## Arena width
-        self.declare_parameter("arena_width")
+        self.declare_parameter("arena_width", 600)
         self.arena_width: int = (
             self.get_parameter("arena_width").get_parameter_value().integer_value
         )
 
         ## Agent diameter
-        self.declare_parameter("agent_diameter")
+        self.declare_parameter("agent_diameter", 100)
         self.agent_diameter: int = (
             self.get_parameter("agent_diameter").get_parameter_value().integer_value
         )
 
         ## MAPF Algorithm Class
-        self.declare_parameter("mapf_solver")
+        self.declare_parameter("mapf_solver", "CBSSolver")
         self.mapf_solver_class: str = (
             self.get_parameter("mapf_solver").get_parameter_value().string_value
         )
@@ -109,15 +111,15 @@ class Planner(Node):
             raise AssertionError("Solver class not in Planner dictionary. Please update it (inside Planner.py).")
 
         ## MAPF Algorithm Input Class
-        self.declare_parameter("mapf_input")
+        self.declare_parameter("mapf_input", "CBSInput")
         self.mapf_input_class: str = (
             self.get_parameter("mapf_input").get_parameter_value().string_value
         )
-        if self.mapf_solver_class not in SOLVER_DICT:
+        if self.mapf_input_class not in SOLVER_DICT:
             raise AssertionError("Solver Input class not in Planner dictionary. Please update it (inside Planner.py).")
 
         ## goal assign Algorithm Class
-        self.declare_parameter("goal_assigner")
+        self.declare_parameter("goal_assigner", "SimpleGoalAssigner")
         self.goal_assigner_class: str = (
             self.get_parameter("goal_assigner").get_parameter_value().string_value
         )
@@ -128,6 +130,20 @@ class Planner(Node):
         self.declare_parameter("time_limit", NO_TIME_LIMIT)
         self.time_limit: float = (
             self.get_parameter("time_limit").get_parameter_value().double_value
+        )
+
+        self.get_logger().info(
+        f"""
+        Planner Parameter values:
+        tf_tag_arena: {self.arena_frame}
+        arena_height: {self.arena_height}
+        arena_width: {self.arena_width}
+        agent_diameter: {self.agent_diameter}
+        mapf_solver: {self.mapf_solver_class}
+        mapf_input: {self.mapf_input_class}
+        goal_assigner: {self.goal_assigner_class}
+        time_limit: {self.time_limit}
+        """
         )
 
     def plan_callback(self, request, response):
@@ -284,19 +300,22 @@ class Planner(Node):
         for obstacle in discrete_obstacles:
             # X is col, Y is row (under our representation)
             obstacle_row, obstacle_col = obstacle[1], obstacle[0]
-            if obstacle_row > self.rows or obstacle_col > self.cols or obstacle_row < 0 or obstacle_col < 0:
+            if obstacle_row >= self.rows or obstacle_col >= self.cols or obstacle_row < 0 or obstacle_col < 0:
                 continue # Outside bound obstacles are not an issue :)
             obstacle_map[obstacle_row][obstacle_col] = True
 
+        mapf_instance = MapfInstance()
+        mapf_instance.map = obstacle_map
+
         # Initialize algorithm input
         mapf_input: MAPFInput = SOLVER_DICT[self.mapf_input_class](
-            map_instance=obstacle_map,
+            map_instance=mapf_instance,
             starts_list=discrete_agents,
             goals_list=discrete_goals,
         )
 
         # The following method call can throw (up)
-        return self.mapf_solver(mapf_input)
+        return self.mapf_solver.solve(mapf_input)
 
     def create_empty_map(self) -> List[List[bool]]:
         """

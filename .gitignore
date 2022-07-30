@@ -1,2 +1,15 @@
 arch_components/arch_components/transform_overviewer.py
 arch_components/arch_components/MAPF-Planner.code-workspace
+arch_test/arch_test/__pycache__/__init__.cpython-38.pyc
+.gitignore
+arch_components/test/__pycache__/test_flake8.cpython-38-PYTEST.pyc
+arch_components/test/__pycache__/test_copyright.cpython-38-PYTEST.pyc
+arch_test/test/__pycache__/test_copyright.cpython-38-PYTEST.pyc
+.gitignore
+.gitignore
+arch_components/test/__pycache__/test_pep257.cpython-38-PYTEST.pyc
+arch_test/test/__pycache__/test_flake8.cpython-38-PYTEST.pyc
+arch_test/arch_test/__pycache__/test_planner_functions.cpython-38-PYTEST.pyc
+arch_test/arch_test/__pycache__/test_interfaces.cpython-38-PYTEST.pyc
+arch_test/test/__pycache__/test_pep257.cpython-38-PYTEST.pyc
+arch_components/arch_components/__pycache__/__init__.cpython-38.pyc
