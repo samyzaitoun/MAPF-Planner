@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Iterable, List, Tuple
 from arch_interfaces.msg import Position, AssignedGoal
-from tf2_ros import ROSException, TransformStamped
+from tf2_ros import TransformStamped
 
 from arch_interfaces.msg import AssignedGoal
 
@@ -16,7 +16,7 @@ class GoalAssigner(ABC):
         pass
 
 
-class AssigningGoalsException(ROSException):
+class AssigningGoalsException(AssertionError):
     def __init__(
         self,
         agents: int,

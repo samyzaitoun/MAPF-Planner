@@ -1,4 +1,4 @@
-from gettext import translation
+
 from typing import Iterable, List, Tuple, Type
 import yaml
 
@@ -22,7 +22,7 @@ from mapf_solver.MAPFSolvers.pbs import CBSInput, CBSSolver, PBSInput, PBSSolver
 from mapf_solver.MAPFSolvers.dict_cbs import DictCBSSolver
 from mapf_solver.MAPFSolvers.prioritized import PrioritizedPlanningSolver
 
-from goal_assigner import GoalAssigner, AssigningGoalsException, SimpleGoalAssigner
+from .goal_assigner import GoalAssigner, AssigningGoalsException, SimpleGoalAssigner
 
 
 NO_TIME_LIMIT = -1
@@ -71,6 +71,8 @@ class Planner(Node):
         self.mapf_solver: MAPFSolver = SOLVER_DICT[self.mapf_solver_class](self.time_limit)
 
         self.goal_assigner: GoalAssigner = ASSIGNER_DICT[self.goal_assigner_class]()
+
+        self.get_logger().info("Finished Initializing component, Waiting for plan requests.")
 
     def get_launch_parameters(self) -> None:
 
@@ -311,3 +313,20 @@ class Planner(Node):
                 z = pos.y + arena.transform.translation.z
             )
         )
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    planner = Planner()
+
+    try:
+        rclpy.spin(planner)
+    except KeyboardInterrupt:
+        pass
+
+    planner.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
