@@ -11,7 +11,7 @@ from arch_interfaces.srv import PlanRequest
 from geometry_msgs.msg import Transform, Vector3
 
 from tf2_ros import TransformException, TransformStamped
-from tf2_ros.buffer import Buffer
+from tf2_ros.buffer import Buffer, Duration
 from tf2_ros.transform_listener import TransformListener
 
 from mapf_solver.Abstract_objects.waypoint import WayPoint
@@ -78,7 +78,7 @@ class Planner(Node):
 
     def get_launch_parameters(self) -> None:
 
-        ##  Arena transform tf name
+        ##  Arena transform frame name
         self.declare_parameter("tf_tag_arena", "arena")
         self.arena_frame: str = (
             self.get_parameter("tf_tag_arena").get_parameter_value().string_value
@@ -173,20 +173,29 @@ class Planner(Node):
             for agent_id in agent_ids:
                 agent_transformations.append(
                     self.tf_buffer.lookup_transform(
-                        agent_id,
-                        self.arena_frame,
-                        now
+                        self.arena_frame, # Parent frame
+                        agent_id,         # Child frame
+                        now,
+                        timeout=Duration(seconds=0.1)
                     )   
                 )
             
+            arena_transform = self.tf_buffer.lookup_transform(
+                "world",
+                self.arena_frame,
+                now,
+                timeout=Duration(seconds=0.1)
+            )
+
             # The following code should theoretically never cause an exception
             obstacle_ids.discard(self.arena_frame) # Mocap isn't an obstacle in our arena
             for obstacle_id in obstacle_ids:
                 obstacle_transformations.append(
                     self.tf_buffer.lookup_transform(
-                        obstacle_id,
                         self.arena_frame,
-                        now
+                        obstacle_id,
+                        now,
+                        timeout=Duration(seconds=0.1)
                     )
                 )
         except TransformException as ex:
@@ -201,7 +210,7 @@ class Planner(Node):
         try:
             assigned_goals += self.goal_assigner.assign_goals_to_agents(
                 unassigned_goals, 
-                zip(agent_ids[0:len(unassigned_agents)], agent_transformations[0:len(unassigned_agents)])
+                list(zip(agent_ids[0:len(unassigned_agents)], agent_transformations[0:len(unassigned_agents)]))
             )
         except AssigningGoalsException as ex:
             response.error_msg = "FAILED_GOAL_ASSIGN"
@@ -230,15 +239,14 @@ class Planner(Node):
         agent_paths: List[Path] = mapf_solution.paths
         # The results are ordered by agent order we sent (assigned_goals sets the order)
 
-
         # Transform the paths from our Discretized map to scene transforms
         agent_transform_paths = AgentPaths()
         agent_transform_paths.agent_paths = [
             AssignedPath(
                 agent_id=a_goal[0],
                 path=[
-                    self.revert_position_to_transform(pos, self.arena_frame)
-                    for pos in path.path
+                    self.revert_position_to_transform(waypoint.position, arena_transform)
+                    for waypoint in path
                 ]
             )
             for a_goal, path in zip(assigned_goals, agent_paths)
@@ -247,7 +255,7 @@ class Planner(Node):
         self.publisher.publish(agent_transform_paths)
 
         response.error_msg = "SUCCESS"
-        response.args = [""]
+        response.args = [str(mapf_solution.sum_of_costs), str(mapf_solution.cpu_time)]
 
         return response
 
@@ -324,12 +332,12 @@ class Planner(Node):
         """
         return [[False] * self.cols] * self.rows
     
-    def revert_position_to_transform(pos: WayPoint, arena: TransformStamped) -> Transform:
+    def revert_position_to_transform(self, pos: WayPoint, arena: TransformStamped) -> Transform:
         return Transform(
             translation=Vector3(
-                x = pos.x + arena.transform.translation.x,
+                x = float((pos.x * self.agent_diameter + self.agent_diameter/2) + arena.transform.translation.x),
                 y = arena.transform.translation.y,
-                z = pos.y + arena.transform.translation.z
+                z = float((pos.y * self.agent_diameter + self.agent_diameter/2) + arena.transform.translation.z)
             )
         )
 

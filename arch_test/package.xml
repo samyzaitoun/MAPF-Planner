@@ -13,7 +13,7 @@
   <test_depend>python3-pytest</test_depend>
   <depend>arch_interfaces</depend>
   <build_depend>arch_components</build_depend>
-  <exec_depend>arch_components</arch_depend>
+  <exec_depend>arch_components</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Iterable, List, Tuple
+from typing import List, Tuple
 from arch_interfaces.msg import Position, AssignedGoal
 from tf2_ros import TransformStamped
 
@@ -10,8 +10,8 @@ class GoalAssigner(ABC):
     @abstractmethod
     def assign_goals_to_agents(
         self, 
-        unassigned_goals: Iterable[Position], 
-        unassigned_agents: Iterable[Tuple[str, TransformStamped]]
+        unassigned_goals: List[Position], 
+        unassigned_agents: List[Tuple[str, TransformStamped]]
     ) -> List[AssignedGoal]:
         pass
 
@@ -34,8 +34,8 @@ class AssigningGoalsException(AssertionError):
 class SimpleGoalAssigner(GoalAssigner):
     def assign_goals_to_agents(
         self, 
-        unassigned_goals: Iterable[Position], 
-        unassigned_agents: Iterable[Tuple[str, TransformStamped]]
+        unassigned_goals: List[Position], 
+        unassigned_agents: List[Tuple[str, TransformStamped]]
     ) -> List[AssignedGoal]:
         if len(unassigned_goals) != len(unassigned_agents):
             raise AssigningGoalsException(len(unassigned_agents), len(unassigned_goals))
