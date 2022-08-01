@@ -74,7 +74,7 @@ class Planner(Node):
 
         self.goal_assigner: GoalAssigner = ASSIGNER_DICT[self.goal_assigner_class]()
 
-        self.get_logger().info("Finished Initializing component, Waiting for plan requests.")
+        self.get_logger().info("Finished Initializing planner component, Waiting for plan requests.")
 
     def get_launch_parameters(self) -> None:
 
