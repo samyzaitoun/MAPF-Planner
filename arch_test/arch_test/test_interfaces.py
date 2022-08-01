@@ -62,7 +62,7 @@ def main(args=None):
         }),
         (AssignedGoal, "AssignedGoal",
         {
-            'pos': Position(x=1.0, y=2.0, z=3.0, w=0.0),
+            'pos': Position(x=1.0, y=2.0, w=0.0),
             'agent_id': "Alpha_5"
         }),
     ]

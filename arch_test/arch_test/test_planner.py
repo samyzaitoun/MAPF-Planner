@@ -148,7 +148,7 @@ def test_successful_plan_request():
 
     mock_plan_request = MagicMock()
     mock_plan_request.assigned_goals = []
-    mock_plan_request.unassigned_goals = [Position(x=550.0, y=0.0, z=50.0, w=1.0)]
+    mock_plan_request.unassigned_goals = [Position(x=550.0, y=0.0, w=1.0)]
     mock_plan_request.unassigned_agents = ["agent_0"]
 
     br.broadcast_agent("agent_0", (50.0, 0.0, 50.0))
