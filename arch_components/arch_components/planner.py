@@ -1,47 +1,4 @@
-
-import math
-from typing import Iterable, List, Tuple, Type
-import yaml
-
-import rclpy
-from rclpy.node import Node, Publisher, Subscription
-
-from arch_interfaces.msg import AssignedGoal, Position, AssignedPath, AgentPaths
-from arch_interfaces.srv import PlanRequest
-from geometry_msgs.msg import Transform, Vector3
-
-from tf2_ros import TransformException, TransformStamped
-from tf2_ros.buffer import Buffer, Duration
-from tf2_ros.transform_listener import TransformListener
-
-from mapf_solver.Abstract_objects.waypoint import WayPoint
-from mapf_solver.Abstract_objects.mapf_solver import MAPFSolver, MAPFInput, MAPFOutput
-from mapf_solver.Abstract_objects.path import Path
-from mapf_solver.Abstract_objects.map_instance import MapfInstance
-from mapf_solver.Concrete_objects.concrete_waypoints import TimedWayPoint
-
-from mapf_solver.MAPFSolvers.pbs import CBSInput, CBSSolver, PBSInput, PBSSolver
-from mapf_solver.MAPFSolvers.dict_cbs import DictCBSSolver
-from mapf_solver.MAPFSolvers.prioritized import PrioritizedPlanningSolver
-
-from .goal_assigner import GoalAssigner, AssigningGoalsException, SimpleGoalAssigner
-
-
-NO_TIME_LIMIT = math.inf
-
-SOLVER_DICT = {
-    "CBSSolver": CBSSolver,
-    "PBSSolver": PBSSolver,
-    "DictCBSSolver": DictCBSSolver,
-    "PrioritizedPlanningSolver": PrioritizedPlanningSolver,
-    "CBSInput": CBSInput,
-    "PBSInput": PBSInput,
-}
-
-ASSIGNER_DICT = {
-    "SimpleGoalAssigner": SimpleGoalAssigner
-}
-
+from .planner_config import *
 
 class Planner(Node):
     """
@@ -58,7 +15,7 @@ class Planner(Node):
         # Retrieve launch parameters
         self.get_launch_parameters()
 
-        self.plan_srv = self.create_service(
+        self.plan_srv: Service = self.create_service(
             PlanRequest, "plan_request", self.plan_callback
         )
         self.publisher = self.create_publisher(AgentPaths, "agent_paths", 1)
@@ -79,31 +36,31 @@ class Planner(Node):
     def get_launch_parameters(self) -> None:
 
         ##  Arena transform frame name
-        self.declare_parameter("tf_tag_arena", "arena")
+        self.declare_parameter("tf_tag_arena", DEFAULT_ARENA_NAME)
         self.arena_frame: str = (
             self.get_parameter("tf_tag_arena").get_parameter_value().string_value
         )
 
         ## Arena height
-        self.declare_parameter("arena_height", 600)
+        self.declare_parameter("arena_height", DEFAULT_ARENA_SIZE)
         self.arena_height: int = (
             self.get_parameter("arena_height").get_parameter_value().integer_value
         )
 
         ## Arena width
-        self.declare_parameter("arena_width", 600)
+        self.declare_parameter("arena_width", DEFAULT_ARENA_SIZE)
         self.arena_width: int = (
             self.get_parameter("arena_width").get_parameter_value().integer_value
         )
 
         ## Agent diameter
-        self.declare_parameter("agent_diameter", 100)
+        self.declare_parameter("agent_diameter", DEFAULT_AGENT_SIZE)
         self.agent_diameter: int = (
             self.get_parameter("agent_diameter").get_parameter_value().integer_value
         )
 
         ## MAPF Algorithm Class
-        self.declare_parameter("mapf_solver", "CBSSolver")
+        self.declare_parameter("mapf_solver", DEFAULT_MAPF_ALGORITHM)
         self.mapf_solver_class: str = (
             self.get_parameter("mapf_solver").get_parameter_value().string_value
         )
@@ -111,7 +68,7 @@ class Planner(Node):
             raise AssertionError("Solver class not in Planner dictionary. Please update it (inside Planner.py).")
 
         ## MAPF Algorithm Input Class
-        self.declare_parameter("mapf_input", "CBSInput")
+        self.declare_parameter("mapf_input", DEFAULT_MAPF_INPUT)
         self.mapf_input_class: str = (
             self.get_parameter("mapf_input").get_parameter_value().string_value
         )
@@ -119,7 +76,7 @@ class Planner(Node):
             raise AssertionError("Solver Input class not in Planner dictionary. Please update it (inside Planner.py).")
 
         ## goal assign Algorithm Class
-        self.declare_parameter("goal_assigner", "SimpleGoalAssigner")
+        self.declare_parameter("goal_assigner", DEFAULT_GOAL_ASSIGNER)
         self.goal_assigner_class: str = (
             self.get_parameter("goal_assigner").get_parameter_value().string_value
         )
@@ -217,6 +174,9 @@ class Planner(Node):
             response.args = [str(ex)]
             return response
 
+        # In case of successful planning, manager needs to know who was assigned to what
+        response.assigned_goals = assigned_goals
+        # TODO: return unassigned goals as well
 
         # Unpack message layers (Overwrite variable type)
         assigned_goals: List[Tuple[str, Position]] = [

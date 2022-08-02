@@ -24,6 +24,7 @@ setup(
     entry_points={
         'console_scripts': [
         	'planner = arch_components.planner:main',
+            'manager = arch_components.manager:main',
         ],
     },
 )

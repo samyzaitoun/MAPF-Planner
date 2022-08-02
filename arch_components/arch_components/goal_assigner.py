@@ -32,6 +32,7 @@ class AssigningGoalsException(AssertionError):
 
 
 class SimpleGoalAssigner(GoalAssigner):
+    # TODO: Handle cases where more goals than agents
     def assign_goals_to_agents(
         self, 
         unassigned_goals: List[Position], 
