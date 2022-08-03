@@ -1,5 +1,11 @@
 from .planner_config import *
 
+class PlannerResponseTypes:
+    SUCCESS = "SUCCESS"
+    NO_AGENT_TRANSFORM = "NO_AGENT_TRANSFORM"
+    FAILED_GOAL_ASSIGN = "FAILED_GOAL_ASSIGN"
+    FAILED_MAP_SOLVE = "FAILED_MAP_SOLVE"
+
 class Planner(Node):
     """
     The Planner component node implementation
@@ -158,7 +164,7 @@ class Planner(Node):
         except TransformException as ex:
             self.get_logger().info(
                 f'Could not transform {agent_id} to {self.arena_frame}: {ex}')
-            response.error_msg = "NO_AGENT_TRANSFORM"
+            response.error_msg = PlannerResponseTypes.NO_AGENT_TRANSFORM
             response.args = [agent_id]
             return response
 
@@ -170,7 +176,7 @@ class Planner(Node):
                 list(zip(agent_ids[0:len(unassigned_agents)], agent_transformations[0:len(unassigned_agents)]))
             )
         except AssigningGoalsException as ex:
-            response.error_msg = "FAILED_GOAL_ASSIGN"
+            response.error_msg = PlannerResponseTypes.FAILED_GOAL_ASSIGN
             response.args = [str(ex)]
             return response
 
@@ -192,7 +198,7 @@ class Planner(Node):
         except Exception as e:
             # Just pointing this out that the library throws errors directly inherited from Exception (!!!)
             # Someone please fix their inheritance to AssertionError!
-            response.error_msg = "FAILED_MAP_SOLVE"
+            response.error_msg = PlannerResponseTypes.FAILED_MAP_SOLVE
             response.args = [str(e)]
             return response
 
@@ -214,7 +220,7 @@ class Planner(Node):
 
         self.publisher.publish(agent_transform_paths)
 
-        response.error_msg = "SUCCESS"
+        response.error_msg = PlannerResponseTypes.SUCCESS
         response.args = [str(mapf_solution.sum_of_costs), str(mapf_solution.cpu_time)]
 
         return response

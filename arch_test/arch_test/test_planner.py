@@ -4,7 +4,7 @@ import rclpy
 from rclpy.node import Node
 from tf2_ros import TransformException, TransformStamped, TransformBroadcaster
 
-from arch_components.planner import Planner # ignore-this
+from arch_components.planner import Planner, PlannerResponseTypes # ignore-this
 from arch_interfaces.msg import Position
 from mock import MagicMock
 
@@ -134,7 +134,7 @@ def test_unequal_goal_to_agent_exception():
         rclpy.spin_once(planner)
     
     res = planner.plan_callback(request=mock_plan_request, response=MagicMock())
-    assert res.error_msg == "FAILED_GOAL_ASSIGN"
+    assert res.error_msg == PlannerResponseTypes.FAILED_GOAL_ASSIGN
 
     planner.destroy_node()
     br.destroy_node()
@@ -157,7 +157,7 @@ def test_successful_plan_request():
     rclpy.spin_once(planner)
 
     res = planner.plan_callback(request=mock_plan_request, response=MagicMock())
-    assert res.error_msg == "SUCCESS"
+    assert res.error_msg == PlannerResponseTypes.SUCCESS
 
     planner.destroy_node()
     br.destroy_node()
