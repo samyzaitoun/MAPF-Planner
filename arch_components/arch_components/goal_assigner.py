@@ -38,10 +38,15 @@ class SimpleGoalAssigner(GoalAssigner):
         unassigned_goals: List[Position], 
         unassigned_agents: List[Tuple[str, TransformStamped]]
     ) -> List[AssignedGoal]:
-        if len(unassigned_goals) != len(unassigned_agents):
-            raise AssigningGoalsException(len(unassigned_agents), len(unassigned_goals))
         # assigns the goals by the order of the lists
-        return [
+        still_unassigned_agents = []
+        still_unassigned_goals = []
+        assigned_goal_agent = [
             AssignedGoal(pos=goal, agent_id=agent[0]) 
             for goal, agent in zip(unassigned_goals, unassigned_agents)
         ]
+        if len(unassigned_goals) < len(unassigned_agents):
+            still_unassigned_agents = [agent[0] for agent in unassigned_agents[len(unassigned_goals):]]
+        else:
+            still_unassigned_goals = [goal for goal in unassigned_goals[len(unassigned_agents):]]
+        return (assigned_goal_agent,still_unassigned_agents,still_unassigned_goals)

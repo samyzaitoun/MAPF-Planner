@@ -143,7 +143,7 @@ class Planner(Node):
                 unassigned_goals,
                 # We only want the unassigned agent transformations
                 list(zip(agent_ids[0:len(unassigned_agents)], agent_transformations[0:len(unassigned_agents)]))
-            )
+            )[0]
         except AssigningGoalsException as ex:
             return self.failed_plan_handler(response, PlannerResponseTypes.FAILED_GOAL_ASSIGN, [str(ex)])
 
