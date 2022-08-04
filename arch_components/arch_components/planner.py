@@ -1,8 +1,9 @@
+
 from .planner_config import *
 
 class PlannerResponseTypes:
     SUCCESS = "SUCCESS"
-    NO_AGENT_TRANSFORM = "NO_AGENT_TRANSFORM"
+    TRANSFORM_FAILURE = "TRANSFORM_FAILURE"
     FAILED_GOAL_ASSIGN = "FAILED_GOAL_ASSIGN"
     FAILED_MAP_SOLVE = "FAILED_MAP_SOLVE"
 
@@ -111,74 +112,40 @@ class Planner(Node):
 
     def plan_callback(self, request, response):
 
+        self.get_logger().info("Plan callback triggered")
+
         # Extract message arguments
         assigned_goals: List[AssignedGoal] = request.assigned_goals
         unassigned_goals: Iterable[Position] = request.unassigned_goals
         unassigned_agents: Iterable[str] = request.unassigned_agents
 
+        
         agent_ids = unassigned_agents + [m.agent_id for m in assigned_goals]
-
-
-        # Load all object ids on scene 
-        obstacle_ids = set(
-            yaml.safe_load(
-                self.tf_buffer.all_frames_as_yaml()
-            ).keys()
-        ).difference(agent_ids) # This code is SUS
-
+        try:
+            obstacle_ids = self.get_all_frame_ids().difference(agent_ids + [self.arena_frame])
+        except AttributeError as ex:
+            return self.failed_plan_handler(response, PlannerResponseTypes.TRANSFORM_FAILURE, [str(ex)])
 
         # Retrieve agent/obstacle locations in arena
-        agent_transformations = []
-        obstacle_transformations = []
-
         try:
             now = rclpy.time.Time()
-            for agent_id in agent_ids:
-                agent_transformations.append(
-                    self.tf_buffer.lookup_transform(
-                        self.arena_frame, # Parent frame
-                        agent_id,         # Child frame
-                        now,
-                        timeout=Duration(seconds=0.1)
-                    )   
-                )
-            
-            arena_transform = self.tf_buffer.lookup_transform(
-                "world",
-                self.arena_frame,
-                now,
-                timeout=Duration(seconds=0.1)
-            )
+            agent_transformations = self.get_frame_transformations(self.arena_frame, agent_ids, now)
+            obstacle_transformations = self.get_frame_transformations(self.arena_frame, obstacle_ids, now)
+            arena_transform = self.get_frame_transformations("world", [self.arena_frame], now)[0]
 
-            # The following code should theoretically never cause an exception
-            obstacle_ids.discard(self.arena_frame) # Mocap isn't an obstacle in our arena
-            for obstacle_id in obstacle_ids:
-                obstacle_transformations.append(
-                    self.tf_buffer.lookup_transform(
-                        self.arena_frame,
-                        obstacle_id,
-                        now,
-                        timeout=Duration(seconds=0.1)
-                    )
-                )
         except TransformException as ex:
-            self.get_logger().info(
-                f'Could not transform {agent_id} to {self.arena_frame}: {ex}')
-            response.error_msg = PlannerResponseTypes.NO_AGENT_TRANSFORM
-            response.args = [agent_id]
-            return response
+            return self.failed_plan_handler(response, PlannerResponseTypes.TRANSFORM_FAILURE, [agent_id])
 
 
         # Assign goals
         try:
             assigned_goals += self.goal_assigner.assign_goals_to_agents(
-                unassigned_goals, 
+                unassigned_goals,
+                # We only want the unassigned agent transformations
                 list(zip(agent_ids[0:len(unassigned_agents)], agent_transformations[0:len(unassigned_agents)]))
             )
         except AssigningGoalsException as ex:
-            response.error_msg = PlannerResponseTypes.FAILED_GOAL_ASSIGN
-            response.args = [str(ex)]
-            return response
+            return self.failed_plan_handler(response, PlannerResponseTypes.FAILED_GOAL_ASSIGN, [str(ex)])
 
         # In case of successful planning, manager needs to know who was assigned to what
         response.assigned_goals = assigned_goals
@@ -195,36 +162,59 @@ class Planner(Node):
             mapf_solution = self.generate_and_solve_map(
                 agent_transformations, assigned_goals, obstacle_transformations
             )
-        except Exception as e:
+        except Exception as ex:
             # Just pointing this out that the library throws errors directly inherited from Exception (!!!)
             # Someone please fix their inheritance to AssertionError!
-            response.error_msg = PlannerResponseTypes.FAILED_MAP_SOLVE
-            response.args = [str(e)]
-            return response
+            return self.failed_plan_handler(response, PlannerResponseTypes.FAILED_MAP_SOLVE, [str(ex)])
 
+        
         agent_paths: List[Path] = mapf_solution.paths
-        # The results are ordered by agent order we sent (assigned_goals sets the order)
-
         # Transform the paths from our Discretized map to scene transforms
-        agent_transform_paths = AgentPaths()
-        agent_transform_paths.agent_paths = [
-            AssignedPath(
-                agent_id=a_goal[0],
-                path=[
-                    self.revert_position_to_transform(waypoint.position, arena_transform)
-                    for waypoint in path
-                ]
-            )
-            for a_goal, path in zip(assigned_goals, agent_paths)
-        ]
-
-        self.publisher.publish(agent_transform_paths)
+        self.publish_agent_plans_from_solution(agent_paths, assigned_goals, arena_transform)
 
         response.error_msg = PlannerResponseTypes.SUCCESS
         response.args = [str(mapf_solution.sum_of_costs), str(mapf_solution.cpu_time)]
 
         return response
+    
+    def failed_plan_handler(
+        self,
+        response: PlanRequest.Response, 
+        error_msg: str, 
+        args: List[str]
+    ) -> PlanRequest.Response:
+        response.error_msg = error_msg
+        response.args = args
+        # Publish no plan
+        self.publisher.publish(AgentPaths())
+        return response
+    
+    def get_all_frame_ids(self) -> Set[str]:
+        return set(
+            yaml.safe_load(
+                self.tf_buffer.all_frames_as_yaml()
+            ).keys()
+        )
+    
+    def get_frame_transformations(
+        self,
+        relative_frame_id: str,
+        frame_ids: Iterable[str],
+        time_point: rclpy.time.Time
+    ) -> List[TransformStamped]:
+        transformations = []
+        for id in frame_ids:
+            transformations.append(
+                self.tf_buffer.lookup_transform(
+                    relative_frame_id, # Parent frame
+                    id,               # Child frame
+                    time_point,
+                    timeout=Duration(seconds=0.1)
+                )   
+            )
 
+        return transformations
+    
     def generate_and_solve_map(
         self,
         agents: List[TransformStamped],
@@ -298,6 +288,28 @@ class Planner(Node):
         """
         return [[False] * self.cols] * self.rows
     
+    def publish_agent_plans_from_solution(
+        self, 
+        agent_paths: List[Path],
+        assigned_goals: List[Tuple[str, Position]],
+        arena_transform: TransformStamped
+    ) -> None:
+        # The results are ordered by agent order we sent (assigned_goals sets the order)
+        # This is relevant because agent_paths doesn't mention which path belongs to which agent id
+        agent_transform_paths = AgentPaths()
+        agent_transform_paths.agent_paths = [
+            AssignedPath(
+                agent_id=a_goal[0],
+                path=[
+                    self.revert_position_to_transform(waypoint.position, arena_transform)
+                    for waypoint in path
+                ]
+            )
+            for a_goal, path in zip(assigned_goals, agent_paths)
+        ]
+
+        self.publisher.publish(agent_transform_paths)
+
     def revert_position_to_transform(self, pos: WayPoint, arena: TransformStamped) -> Transform:
         return Transform(
             translation=Vector3(
