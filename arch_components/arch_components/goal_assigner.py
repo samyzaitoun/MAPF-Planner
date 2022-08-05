@@ -3,7 +3,7 @@ from typing import List, Tuple
 from arch_interfaces.msg import Position, AssignedGoal
 from tf2_ros import TransformStamped
 
-from arch_interfaces.msg import AssignedGoal
+from arch_interfaces.msg import AssignedGoal, Position
 
 
 class GoalAssigner(ABC):
@@ -12,7 +12,7 @@ class GoalAssigner(ABC):
         self, 
         unassigned_goals: List[Position], 
         unassigned_agents: List[Tuple[str, TransformStamped]]
-    ) -> List[AssignedGoal]:
+    ) -> Tuple[List[AssignedGoal], List[Position]]:
         pass
 
 
@@ -37,7 +37,7 @@ class SimpleGoalAssigner(GoalAssigner):
         self, 
         unassigned_goals: List[Position], 
         unassigned_agents: List[Tuple[str, TransformStamped]]
-    ) -> List[AssignedGoal]:
+    ) -> Tuple[List[AssignedGoal], List[Position]]:
         # assigns the goals by the order of the lists
         still_unassigned_agents = []
         still_unassigned_goals = []
@@ -45,8 +45,6 @@ class SimpleGoalAssigner(GoalAssigner):
             AssignedGoal(pos=goal, agent_id=agent[0]) 
             for goal, agent in zip(unassigned_goals, unassigned_agents)
         ]
-        if len(unassigned_goals) < len(unassigned_agents):
-            still_unassigned_agents = [agent[0] for agent in unassigned_agents[len(unassigned_goals):]]
-        else:
+        if len(unassigned_goals) > len(unassigned_agents):
             still_unassigned_goals = [goal for goal in unassigned_goals[len(unassigned_agents):]]
-        return (assigned_goal_agent,still_unassigned_agents,still_unassigned_goals)
+        return assigned_goal_agent, still_unassigned_goals

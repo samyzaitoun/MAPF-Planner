@@ -143,17 +143,18 @@ class Planner(Node):
 
         # Assign goals
         try:
-            assigned_goals += self.goal_assigner.assign_goals_to_agents(
+            newly_assigned_goals, unassigned_goals = self.goal_assigner.assign_goals_to_agents(
                 unassigned_goals,
                 # We only want the unassigned agent transformations
                 list(zip(agent_ids[0:len(unassigned_agents)], agent_transformations[0:len(unassigned_agents)]))
-            )[0]
+            )
+            assigned_goals += newly_assigned_goals
         except AssigningGoalsException as ex:
             return self.failed_plan_handler(response, PlannerResponseTypes.FAILED_GOAL_ASSIGN, [str(ex)])
 
         # In case of successful planning, manager needs to know who was assigned to what
         response.assigned_goals = assigned_goals
-        # TODO: return unassigned goals as well
+        response.unassigned_goals = unassigned_goals
 
         # Unpack message layers (Overwrite variable type)
         assigned_goals: List[Tuple[str, Position]] = [

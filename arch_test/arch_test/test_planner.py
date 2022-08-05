@@ -114,32 +114,6 @@ def test_transformation_listening():
     br.destroy_node()
     rclpy.shutdown()
 
-def test_unequal_goal_to_agent_exception():
-    rclpy.init()
-    planner = Planner()
-    br = TestFrameBroadcaster()
-    br.broadcast_arena()
-    rclpy.spin_once(planner)
-    
-    mock_plan_request = MagicMock()
-    mock_plan_request.assigned_goals = []
-    mock_plan_request.unassigned_goals = []
-    mock_plan_request.unassigned_agents = [f"agent_{i}" for i in range(5)]
-
-    agent_list = [(agent_id, (float(100),) * 3) for agent_id in mock_plan_request.unassigned_agents]
-    
-    # broadcast agents
-    for agent_id, loc in agent_list:
-        br.broadcast_agent(agent_id, loc)
-        rclpy.spin_once(planner)
-    
-    res = planner.plan_callback(request=mock_plan_request, response=MagicMock())
-    assert res.error_msg == PlannerResponseTypes.FAILED_GOAL_ASSIGN
-
-    planner.destroy_node()
-    br.destroy_node()
-    rclpy.shutdown()
-
 def test_successful_plan_request():
     rclpy.init()
     planner = Planner()
@@ -178,7 +152,6 @@ def main(args=None):
     tests = [
         test_generate_and_solve_map, 
         test_transformation_listening,
-        test_unequal_goal_to_agent_exception,
         test_successful_plan_request
     ]
     for test in tests:
