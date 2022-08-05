@@ -134,7 +134,11 @@ class Planner(Node):
             arena_transform = self.get_frame_transformations("world", [self.arena_frame], now)[0]
 
         except TransformException as ex:
-            return self.failed_plan_handler(response, PlannerResponseTypes.TRANSFORM_FAILURE, [agent_id])
+            return self.failed_plan_handler(
+                response, 
+                error_msg=PlannerResponseTypes.TRANSFORM_FAILURE, 
+                args=[str(ex)] + agent_ids + list(obstacle_ids)
+            )
 
 
         # Assign goals

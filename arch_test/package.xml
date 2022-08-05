@@ -14,6 +14,8 @@
   <depend>arch_interfaces</depend>
   <build_depend>arch_components</build_depend>
   <exec_depend>arch_components</exec_depend>
+  <build_depend>threading</build_depend>
+  <exec_depend>threading</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>

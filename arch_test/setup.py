@@ -22,6 +22,7 @@ setup(
         'console_scripts': [
             'test_interfaces = arch_test.test_interfaces:main',
             'test_planner = arch_test.test_planner:main',
+            'test_manager = arch_test.test_manager:main',
         ],
     },
 )

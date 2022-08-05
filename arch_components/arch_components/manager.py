@@ -10,7 +10,7 @@ from arch_interfaces.srv import PlanRequest , AgentRequest
 
 from .planner import PlannerResponseTypes
 
-DEFAULT_STALL_TIME = "0.1"
+DEFAULT_STALL_TIME = 0.1
 DEFAULT_IDLE_TIME = "0.05"
 
 # MSG Request strings
@@ -29,14 +29,14 @@ class ManagerResponseTypes:
 
 class Manager(Node):
 
-    assigned_goals: List[AssignedGoal] = []
-    unassigned_goals: List[Position] = []
-    unassigned_agents: List[str] = []
-    future_response = None
-
     def __init__(self):
         super().__init__("manager_component")
         self.get_launch_parameters()
+
+        self.assigned_goals: List[AssignedGoal] = []
+        self.unassigned_goals: List[Position] = []
+        self.unassigned_agents: List[str] = []
+        self.future_response = None
 
         # Create client for plan request srv
         self.cli: Client = self.create_client(PlanRequest, 'plan_request')
@@ -49,6 +49,7 @@ class Manager(Node):
             Position,
             'goals',
             self.goal_callback,
+            1
         )
 
         # The timer will be used to group a cluster of agents who want to queue again simulatenously
@@ -103,7 +104,7 @@ class Manager(Node):
         if msg in self.unassigned_goals:
             return
         self.unassigned_goals.append(msg)
-        self.get_logger().info(f"GOAL ADDED: {msg}")
+        self.get_logger().info(f"GOAL LISTED: {msg}")
 
     def idle_agent_handler(self, 
         agent_id: str, 
@@ -116,6 +117,7 @@ class Manager(Node):
         self.unassigned_agents.append(agent_id)
         self.plan_timer.reset() # Start/Reset the timer
 
+        self.get_logger().info(f"AGENT LISTED: {agent_id}")
         response.error_msg = ManagerResponseTypes.WAIT_PLAN
         return response
 
@@ -150,8 +152,8 @@ class Manager(Node):
         """
         Dequeues agent from assigned/unassigned list
         """
-        self.remove_agent_from_assigned_list()
-        self.remove_agent_from_unassigned_list()
+        self.remove_agent_from_assigned_list(agent_id)
+        self.remove_agent_from_unassigned_list(agent_id)
         response.error_msg = ManagerResponseTypes.AGENT_PLAN_CANCELED
         return response
 
@@ -159,11 +161,13 @@ class Manager(Node):
         for assigned_goal in self.assigned_goals:
             if assigned_goal.agent_id == agent_id:
                 self.assigned_goals.remove(assigned_goal)
+                self.get_logger().info(f"AGENT DEQUEUED FROM ASSIGNED LIST: {agent_id}")
                 return assigned_goal
     
     def remove_agent_from_unassigned_list(self, agent_id: str) -> None:
         try:
             self.unassigned_agents.remove(agent_id)
+            self.get_logger().info(f"AGENT DEQUEUED: {agent_id}")
         except ValueError:
             pass
 
@@ -191,7 +195,7 @@ class Manager(Node):
         else:
             self.assigned_goals = response.assigned_goals
             self.unassigned_goals = response.unassigned_goals
-            self.unassigned_agents.clear()
+        self.unassigned_agents.clear()
         
         # Reset response
         self.future_response = None
