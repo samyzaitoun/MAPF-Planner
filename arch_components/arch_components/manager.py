@@ -51,6 +51,7 @@ class Manager(Node):
             self.goal_callback,
             10
         )
+        self.goal_buffer: List[Position] = []
 
         # The timer will be used to group a cluster of agents who want to queue again simulatenously
         self.plan_timer = self.create_timer(self.plan_bus_timer, self.timer_callback)
@@ -102,9 +103,13 @@ class Manager(Node):
         return response
 
     def goal_callback(self, msg: Position) -> None:
-        if msg in self.unassigned_goals:
+        if msg in self.unassigned_goals or msg in self.goal_buffer:
             return
-        self.unassigned_goals.append(msg)
+        # We can't accept goals during plan request (since response overrides unassigned goals)
+        if self.future_response:
+            self.goal_buffer.append(msg)
+        else:
+            self.unassigned_goals.append(msg)
         self.get_logger().info(f"GOAL LISTED: {msg}")
 
     def idle_agent_handler(self, 
@@ -129,7 +134,7 @@ class Manager(Node):
         """
         Removes agent from assigned list & requeues agent
         """
-        self.remove_agent_from_assigned_list()
+        self.remove_agent_from_assigned_list(agent_id)
         
         # Agent Reached goal - now is idle
         return self.idle_agent_handler(agent_id, response)
@@ -196,10 +201,14 @@ class Manager(Node):
         else:
             self.assigned_goals = response.assigned_goals
             self.unassigned_goals = response.unassigned_goals
-        self.unassigned_agents.clear()
         
-        # Reset response
+        # Reset response and clear buffers / irrelevant data
+        self.unassigned_goals += self.goal_buffer
+        self.goal_buffer.clear()
+        # Agents always get cleared - executor needs to manually retry
+        self.unassigned_agents.clear()
         self.future_response = None
+        
         
         # Cancel timer
         self.plan_timer.cancel()
