@@ -16,19 +16,26 @@ def test_planner_publishing():
     goal_publisher = GoalPublisher()
     a_01_executor = AgentTestExecutor("A_01")
     a_02_executor = AgentTestExecutor("A_02")
-    # a_03_executor = AgentTestExecutor("A_03")
-    # a_04_executor = AgentTestExecutor("A_04")
+    a_03_executor = AgentTestExecutor("A_03")
+    a_04_executor = AgentTestExecutor("A_04")
     node_list = [
         manager, 
         planner, 
         goal_publisher, 
         a_01_executor,
         a_02_executor,
+        a_03_executor,
+        a_04_executor,
         FixedFrameBroadcaster("world", "arena", Vector3(x=0.0, y=0.0, z=0.0)),
         FixedFrameBroadcaster("arena", "A_01", Vector3(x=50.0, y=0.0, z=50.0)),
         FixedFrameBroadcaster("arena", "A_02", Vector3(x=150.0, y=0.0, z=150.0)),
         FixedFrameBroadcaster("arena", "A_03", Vector3(x=250.0, y=0.0, z=50.0)),
-        # FixedFrameBroadcaster("arena", "A_04", Vector3(x=150.0, y=0.0, z=250.0))
+        FixedFrameBroadcaster("arena", "A_04", Vector3(x=150.0, y=0.0, z=250.0)),
+        FixedFrameBroadcaster("arena", "O_01", Vector3(x=150.0, y=0.0, z=450.0)),
+        FixedFrameBroadcaster("arena", "O_02", Vector3(x=250.0, y=0.0, z=450.0)),
+        FixedFrameBroadcaster("arena", "O_03", Vector3(x=350.0, y=0.0, z=450.0)),
+        FixedFrameBroadcaster("arena", "O_04", Vector3(x=450.0, y=0.0, z=450.0)),
+        FixedFrameBroadcaster("arena", "O_05", Vector3(x=550.0, y=0.0, z=450.0))
     ]
 
     executor = rclpy.executors.MultiThreadedExecutor()
@@ -48,9 +55,11 @@ def test_planner_publishing():
     goal_publisher.publish_goal(Position(x=350.0, y=550.0, w=1.0))
     goal_publisher.publish_goal(Position(x=250.0, y=550.0, w=1.0))
     a_02_executor.request_and_wait_for_response()
-    # a_03_executor.request_and_wait_for_response()
-    # sleep(1.1)
-    # a_04_executor.request_and_wait_for_response()
+    sleep(0.05)
+    a_03_executor.request_and_wait_for_response()
+    sleep(0.1)
+    a_04_executor.request_and_wait_for_response()
+
     while manager.unassigned_agents != []:
         sleep(0.5)
 

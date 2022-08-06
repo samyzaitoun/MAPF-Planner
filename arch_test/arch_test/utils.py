@@ -95,4 +95,4 @@ class AgentTestExecutor(Node):
                 self.get_logger().info(f"PATH PUBLISHED FOR {self.agent_id}: {string_solution}")
                 return
         
-        self.get_logger.info(f"NO PATH PUBLISHED FOR {self.agent_id}")
+        self.get_logger().info(f"NO PATH PUBLISHED FOR {self.agent_id}")

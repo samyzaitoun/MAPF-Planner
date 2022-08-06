@@ -273,8 +273,10 @@ class Planner(Node):
                 continue # Outside bound obstacles are not an issue :)
             obstacle_map[obstacle_row][obstacle_col] = TRUE
 
+        map_str = "\n"
         for row in obstacle_map:
-            self.get_logger().info(f"{row}")
+            map_str += str(row) + '\n'
+        self.get_logger().info(map_str)
 
         mapf_instance = MapfInstance()
         mapf_instance.map = obstacle_map
