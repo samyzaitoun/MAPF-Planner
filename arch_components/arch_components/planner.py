@@ -33,8 +33,6 @@ class Planner(Node):
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
-        self.mapf_solver: MAPFSolver = SOLVER_DICT[self.mapf_solver_class](self.time_limit)
-
         self.goal_assigner: GoalAssigner = ASSIGNER_DICT[self.goal_assigner_class]()
 
         self.get_logger().info("Finished Initializing planner component, Waiting for plan requests.")
@@ -228,6 +226,10 @@ class Planner(Node):
             -> mocap  0 -------------->
                         0  1  2  3  4
         """
+        # DON'T MOVE THIS TO INIT (MODULE HAS SHARED MEMORY, RUNS ARE NOT ISOLATED)
+        self.mapf_solver: MAPFSolver = SOLVER_DICT[self.mapf_solver_class](self.time_limit)
+
+        # Order of elements matters here (must be identical to the goals in assigned_goals)!
         assigned_agents = [a_goal[0] for a_goal in assigned_goals]
         assigned_agent_transforms = [agent_transforms[agent] for agent in assigned_agents]
 
@@ -252,15 +254,27 @@ class Planner(Node):
                 int(obstacle.transform.translation.x / self.agent_diameter),
                 int(obstacle.transform.translation.z / self.agent_diameter),
             )
-            for obstacle in obstacle_transforms.items()
+            for obstacle in obstacle_transforms.values()
         ]
+
+        self.get_logger().info(
+            f"""
+            DISCRETE_AGENTS: {discrete_agents}
+            DISCRETE_GOALS: {discrete_goals}
+            DISCRETE_OBSTACLES: {discrete_obstacles}
+            """
+        )
+
         obstacle_map = self.create_empty_map()
         for obstacle in discrete_obstacles:
             # X is col, Y is row (under our representation)
-            obstacle_row, obstacle_col = obstacle[1], obstacle[0]
+            obstacle_row, obstacle_col = obstacle[0], obstacle[1]
             if obstacle_row >= self.rows or obstacle_col >= self.cols or obstacle_row < 0 or obstacle_col < 0:
                 continue # Outside bound obstacles are not an issue :)
-            obstacle_map[obstacle_row][obstacle_col] = True
+            obstacle_map[obstacle_row][obstacle_col] = TRUE
+
+        for row in obstacle_map:
+            self.get_logger().info(f"{row}")
 
         mapf_instance = MapfInstance()
         mapf_instance.map = obstacle_map
@@ -280,7 +294,7 @@ class Planner(Node):
         We're using the map input representation required by the algorithm library.
         In the library, a 2D list of bools represent empty & taken positions (False = Empty, True = Taken)
         """
-        return [[False] * self.cols] * self.rows
+        return [[FALSE]*self.cols for i in range(self.rows)]
     
     def publish_agent_plans_from_solution(
         self, 

@@ -47,3 +47,5 @@ SOLVER_DICT = {
 ASSIGNER_DICT = {
     "SimpleGoalAssigner": SimpleGoalAssigner
 }
+
+TRUE, FALSE = 1, 0

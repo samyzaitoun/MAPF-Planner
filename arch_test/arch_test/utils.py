@@ -1,13 +1,13 @@
 
 from time import sleep
 import rclpy
-from typing import Tuple
+from typing import List, Tuple
 from rclpy.node import Node
 from tf2_ros import TransformStamped, TransformBroadcaster
 from geometry_msgs.msg import Vector3
 from arch_components.planner import Planner, PlannerResponseTypes
 from arch_components.manager import Manager, ManagerRequestTypes, ManagerResponseTypes
-from arch_interfaces.msg import Position, AgentPaths
+from arch_interfaces.msg import Position, AgentPaths, AssignedPath
 from arch_interfaces.srv import AgentRequest
 
 class TestFrameBroadcaster(Node):
@@ -36,7 +36,7 @@ class TestFrameBroadcaster(Node):
         self.br.sendTransform(t)
 
 class FixedFrameBroadcaster(Node):
-    def __init__(self, parent_frame_id: str, child_frame_id: str, pos: Vector3, freq: rclpy.time.Time):
+    def __init__(self, parent_frame_id: str, child_frame_id: str, pos: Vector3, freq: rclpy.time.Time = 0.00833):
         super().__init__(f'FF_{child_frame_id}_broadcaster')
         self.parent_id = parent_frame_id
         self.child_id = child_frame_id
@@ -76,7 +76,7 @@ class AgentTestExecutor(Node):
         super().__init__(f"{agent_id}_executor")
         self.agent_id = agent_id
         self.cli = self.create_client(AgentRequest, 'agent_request')
-        self.subscription = self.create_subscription(AgentPaths, 'agent_paths', self.sol_callback)
+        self.subscription = self.create_subscription(AgentPaths, 'agent_paths', self.sol_callback, 10)
     
     def request_and_wait_for_response(self, agent_msg: str = ManagerRequestTypes.IDLE):
         while not self.cli.service_is_ready():
@@ -88,10 +88,10 @@ class AgentTestExecutor(Node):
             response = self.cli.call(AgentRequest.Request(agent_msg=agent_msg, agent_id=self.agent_id))
     
     def sol_callback(self, msg: AgentPaths):
-        agent_paths = msg.agent_paths
+        agent_paths: List[AssignedPath] = msg.agent_paths
         for assigned_path in agent_paths:
             if assigned_path.agent_id == self.agent_id:
-                string_solution = '-->'.join([str((point.x, point.z)) for point in assigned_path.path])
+                string_solution = '-->'.join([str((point.translation.x, point.translation.z)) for point in assigned_path.path])
                 self.get_logger().info(f"PATH PUBLISHED FOR {self.agent_id}: {string_solution}")
                 return
         
