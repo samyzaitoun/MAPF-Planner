@@ -1,61 +1,11 @@
 
-from typing import Tuple
 import rclpy
-from rclpy.node import Node
-from tf2_ros import TransformException, TransformStamped, TransformBroadcaster
 
 from arch_components.planner import Planner, PlannerResponseTypes # ignore-this
 from arch_interfaces.msg import Position
 from mock import MagicMock
 
-class TestFrameBroadcaster(Node):
-    def __init__(self):
-        super().__init__('test_frame_broadcaster')
-        self.br = TransformBroadcaster(self)
-
-    def broadcast_arena(self):
-        t = TransformStamped()
-        t.header.stamp = self.get_clock().now().to_msg()
-        t.header.frame_id = 'world'
-        t.child_frame_id = 'arena'
-        t.transform.translation.x = 1.0
-        t.transform.translation.y = 1.0
-        t.transform.translation.z = 1.0
-        self.br.sendTransform(t)
-    
-    def broadcast_agent(self, agent_id: str, loc: Tuple[float, float, float]):
-        t = TransformStamped()
-        t.header.stamp = self.get_clock().now().to_msg()
-        t.header.frame_id = 'arena'
-        t.child_frame_id = agent_id
-        t.transform.translation.x = loc[0]
-        t.transform.translation.y = loc[1]
-        t.transform.translation.z = loc[2]
-        self.br.sendTransform(t)
-
-
-def test_generate_and_solve_map():
-    rclpy.init()
-    planner = Planner()
-
-    agents = [MagicMock() for i in range(6)]
-    coords = 0
-    for agent in agents:
-        agent.transform.translation.x = coords
-        agent.transform.translation.y = coords
-        coords += 100
-
-    coords = 500
-    goals = [MagicMock() for i in range(6)]
-    for goal in goals:
-        goal[1].x = coords
-        goal[1].y = 0
-        coords -= 100
-    obstacles = []
-    output = planner.generate_and_solve_map(agents, goals, obstacles)
-    assert output
-    planner.destroy_node()
-    rclpy.shutdown()
+from .utils import TestFrameBroadcaster
 
 def test_transformation_listening():
     rclpy.init()
@@ -150,7 +100,6 @@ def main(args=None):
     time_limit: Infinity
     """
     tests = [
-        test_generate_and_solve_map, 
         test_transformation_listening,
         test_successful_plan_request
     ]

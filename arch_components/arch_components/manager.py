@@ -49,7 +49,7 @@ class Manager(Node):
             Position,
             'goals',
             self.goal_callback,
-            1
+            10
         )
 
         # The timer will be used to group a cluster of agents who want to queue again simulatenously
@@ -81,6 +81,7 @@ class Manager(Node):
         if self.future_response:
             response.error_msg = ManagerResponseTypes.RETRY
             response.args = [self.force_idle_time_period]
+            self.get_logger().info(f"AGENT REQUEST DENIED: {agent_id}")
             return response
 
         if agent_msg == ManagerRequestTypes.IDLE:

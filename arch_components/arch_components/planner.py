@@ -19,8 +19,7 @@ class Planner(Node):
     def __init__(self):
         super().__init__("planner_component")
 
-        # Retrieve launch parameters
-        self.get_launch_parameters()
+        self.load_launch_parameters()
 
         self.plan_srv: Service = self.create_service(
             PlanRequest, "plan_request", self.plan_callback
@@ -40,7 +39,7 @@ class Planner(Node):
 
         self.get_logger().info("Finished Initializing planner component, Waiting for plan requests.")
 
-    def get_launch_parameters(self) -> None:
+    def load_launch_parameters(self) -> None:
 
         ##  Arena transform frame name
         self.declare_parameter("tf_tag_arena", DEFAULT_ARENA_NAME)
@@ -96,20 +95,6 @@ class Planner(Node):
             self.get_parameter("time_limit").get_parameter_value().double_value
         )
 
-        self.get_logger().info(
-        f"""
-        Planner Parameter values:
-        tf_tag_arena: {self.arena_frame}
-        arena_height: {self.arena_height}
-        arena_width: {self.arena_width}
-        agent_diameter: {self.agent_diameter}
-        mapf_solver: {self.mapf_solver_class}
-        mapf_input: {self.mapf_input_class}
-        goal_assigner: {self.goal_assigner_class}
-        time_limit: {self.time_limit}
-        """
-        )
-
     def plan_callback(self, request, response):
 
         self.get_logger().info("Plan callback triggered")
@@ -131,7 +116,7 @@ class Planner(Node):
             now = rclpy.time.Time()
             agent_transformations = self.get_frame_transformations(self.arena_frame, agent_ids, now)
             obstacle_transformations = self.get_frame_transformations(self.arena_frame, obstacle_ids, now)
-            arena_transform = self.get_frame_transformations("world", [self.arena_frame], now)[0]
+            arena_transform = self.get_frame_transformations("world", [self.arena_frame], now)[self.arena_frame]
 
         except TransformException as ex:
             return self.failed_plan_handler(
@@ -146,7 +131,7 @@ class Planner(Node):
             newly_assigned_goals, unassigned_goals = self.goal_assigner.assign_goals_to_agents(
                 unassigned_goals,
                 # We only want the unassigned agent transformations
-                list(zip(agent_ids[0:len(unassigned_agents)], agent_transformations[0:len(unassigned_agents)]))
+                [(agent_id, agent_transformations[agent_id]) for agent_id in unassigned_agents]
             )
             assigned_goals += newly_assigned_goals
         except AssigningGoalsException as ex:
@@ -207,10 +192,10 @@ class Planner(Node):
         relative_frame_id: str,
         frame_ids: Iterable[str],
         time_point: rclpy.time.Time
-    ) -> List[TransformStamped]:
-        transformations = []
+    ) -> Dict[str, TransformStamped]:
+        transformations = dict()
         for id in frame_ids:
-            transformations.append(
+            transformations[id] = (
                 self.tf_buffer.lookup_transform(
                     relative_frame_id, # Parent frame
                     id,               # Child frame
@@ -223,9 +208,9 @@ class Planner(Node):
     
     def generate_and_solve_map(
         self,
-        agents: List[TransformStamped],
-        goals: List[Tuple[str, Position]],
-        obstacles: List[TransformStamped],
+        agent_transforms: Dict[str, TransformStamped],
+        assigned_goals: List[Tuple[str, Position]],
+        obstacle_transforms: Dict[str, TransformStamped],
     ) -> MAPFOutput:
         """
         In our lab enviornement, our "relative" view point captures & publishes agent transformations
@@ -243,13 +228,16 @@ class Planner(Node):
             -> mocap  0 -------------->
                         0  1  2  3  4
         """
+        assigned_agents = [a_goal[0] for a_goal in assigned_goals]
+        assigned_agent_transforms = [agent_transforms[agent] for agent in assigned_agents]
+
         # Discretize agent, goal & obstacle positions into board
         discrete_agents = [
             WayPoint(
                 x=int(agent.transform.translation.x / self.agent_diameter),
                 y=int(agent.transform.translation.z / self.agent_diameter),
             )
-            for agent in agents
+            for agent in assigned_agent_transforms
         ]
         # Algo lib uses TimedWayPoint for goals and I don't understand why. (It doesn't supply a t value...)
         discrete_goals = [
@@ -257,14 +245,14 @@ class Planner(Node):
                 x=int(goal[1].x / self.agent_diameter),
                 y=int(goal[1].y / self.agent_diameter),
             )
-            for goal in goals
+            for goal in assigned_goals
         ]
         discrete_obstacles = [
             (
                 int(obstacle.transform.translation.x / self.agent_diameter),
                 int(obstacle.transform.translation.z / self.agent_diameter),
             )
-            for obstacle in obstacles
+            for obstacle in obstacle_transforms.items()
         ]
         obstacle_map = self.create_empty_map()
         for obstacle in discrete_obstacles:
