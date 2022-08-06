@@ -192,6 +192,7 @@ class Planner(Node):
         response.args = args
         # Publish no plan
         self.publisher.publish(AgentPaths())
+        self.get_logger().info("Plan request failed!")
         return response
     
     def get_all_frame_ids(self) -> Set[str]:
@@ -314,6 +315,7 @@ class Planner(Node):
         ]
 
         self.publisher.publish(agent_transform_paths)
+        self.get_logger().info("Plan request successful! Plans were published.")
 
     def revert_position_to_transform(self, pos: WayPoint, arena: TransformStamped) -> Transform:
         return Transform(
