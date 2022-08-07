@@ -79,6 +79,11 @@ class AgentTestExecutor(Node):
         self.subscription = self.create_subscription(AgentPaths, 'agent_paths', self.sol_callback, 10)
     
     def request_and_wait_for_response(self, agent_msg: str = ManagerRequestTypes.IDLE):
+        """
+        This method is not asynchronous in the sense that if you call this from the main thread,
+        it will block the main thread (Unlike sol_callback which is called on the dedicated thread for the node). 
+        Please be wary of that.
+        """
         while not self.cli.service_is_ready():
             sleep(0.1)
         response = self.cli.call(AgentRequest.Request(agent_msg=agent_msg, agent_id=self.agent_id))
@@ -87,6 +92,10 @@ class AgentTestExecutor(Node):
             sleep(sleep_time)
             response = self.cli.call(AgentRequest.Request(agent_msg=agent_msg, agent_id=self.agent_id))
     
+    def disconect_and_reconnect(self):
+        self.request_and_wait_for_response(ManagerRequestTypes.AGENT_DISCONNECTED)
+        self.request_and_wait_for_response()
+        
     def sol_callback(self, msg: AgentPaths):
         agent_paths: List[AssignedPath] = msg.agent_paths
         for assigned_path in agent_paths:

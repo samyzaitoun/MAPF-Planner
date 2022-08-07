@@ -62,6 +62,20 @@ def test_planner_publishing():
 
     while manager.unassigned_agents != []:
         sleep(0.5)
+    
+    a_04_executor.disconect_and_reconnect()
+
+    while manager.unassigned_agents != []:
+        sleep(0.5)
+    
+    a_04_executor.disconect_and_reconnect()
+    sleep(0.1)
+    goal_publisher.publish_goal(Position(x=150.0, y=550.0, w=1.0))
+    
+    while manager.unassigned_agents != []:
+        sleep(0.5)
+    
+    assert len(manager.unassigned_goals) == 1
 
     for node in node_list:
         node.destroy_node()

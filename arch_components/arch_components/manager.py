@@ -1,6 +1,6 @@
 
 
-from typing import Iterable, List, Tuple, Type
+from typing import Iterable, List, Tuple, Type, Union
 
 import rclpy
 from rclpy.node import Node, Client, Service
@@ -146,8 +146,9 @@ class Manager(Node):
         """
         Removes agent from assigned list, requeues goal & requeues agent
         """
-        goal = self.remove_agent_from_assigned_list(agent_id).pos
-        self.unassigned_goals.append(goal)
+        assigned_goal = self.remove_agent_from_assigned_list(agent_id)
+        if assigned_goal != None:
+            self.unassigned_goals.append(assigned_goal.pos)
 
         return self.idle_agent_handler(agent_id, response)
 
@@ -158,12 +159,16 @@ class Manager(Node):
         """
         Dequeues agent from assigned/unassigned list
         """
-        self.remove_agent_from_assigned_list(agent_id)
+        assigned_goal = self.remove_agent_from_assigned_list(agent_id)
         self.remove_agent_from_unassigned_list(agent_id)
+
+        if assigned_goal != None:
+            self.unassigned_goals.append(assigned_goal.pos)
+
         response.error_msg = ManagerResponseTypes.AGENT_PLAN_CANCELED
         return response
 
-    def remove_agent_from_assigned_list(self, agent_id: str) -> AssignedGoal:
+    def remove_agent_from_assigned_list(self, agent_id: str) -> Union[AssignedGoal, None]:
         for assigned_goal in self.assigned_goals:
             if assigned_goal.agent_id == agent_id:
                 self.assigned_goals.remove(assigned_goal)
