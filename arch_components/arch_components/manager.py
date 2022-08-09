@@ -208,8 +208,7 @@ class Manager(Node):
             self.unassigned_goals = response.unassigned_goals
         
         # Reset response and clear buffers / irrelevant data
-        self.unassigned_goals += self.goal_buffer
-        self.goal_buffer.clear()
+        self.merge_and_clear_goal_buffer(self.unassigned_goals)
         # Agents always get cleared - executor needs to manually retry
         self.unassigned_agents.clear()
         self.future_response = None
@@ -227,6 +226,13 @@ class Manager(Node):
         
         # sync request
         self.future_response = self.cli.call_async(pr)
+    
+    def merge_and_clear_goal_buffer(self, goals: List[Position]) -> None:
+        for buffered_goal in self.goal_buffer:
+            if buffered_goal in goals:
+                continue
+            goals.append(buffered_goal)
+        self.goal_buffer.clear()
 
 
 def main(args=None):
