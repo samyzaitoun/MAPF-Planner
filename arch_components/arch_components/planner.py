@@ -6,13 +6,13 @@ class PlannerResponseTypes:
     TRANSFORM_FAILURE = "TRANSFORM_FAILURE"
     FAILED_GOAL_ASSIGN = "FAILED_GOAL_ASSIGN"
     FAILED_MAP_SOLVE = "FAILED_MAP_SOLVE"
+    INVALID_INPUT = "INVALID_INPUT"
 
 class Planner(Node):
     """
     The Planner component node implementation
     """
 
-    publisher: Publisher = None
     plan_subscription: Subscription = None
     tf_subscription: Subscription = None
 
@@ -24,7 +24,6 @@ class Planner(Node):
         self.plan_srv: Service = self.create_service(
             PlanRequest, "plan_request", self.plan_callback
         )
-        self.publisher = self.create_publisher(AgentPaths, "agent_paths", 1)
 
         self.rows = int(self.arena_height / self.agent_diameter)
         self.cols = int(self.arena_width / self.agent_diameter)
@@ -102,6 +101,12 @@ class Planner(Node):
         unassigned_goals: Iterable[Position] = request.unassigned_goals
         unassigned_agents: Iterable[str] = request.unassigned_agents
 
+        if unassigned_agents == [] or unassigned_goals == []:
+            return self.failed_plan_handler(
+                response,
+                error_msg=PlannerResponseTypes.INVALID_INPUT,
+                args=[]
+            )
         
         agent_ids = unassigned_agents + [m.agent_id for m in assigned_goals]
         try:
@@ -157,11 +162,11 @@ class Planner(Node):
 
         
         agent_paths: List[Path] = mapf_solution.paths
-        # Transform the paths from our Discretized map to scene transforms
-        self.publish_agent_plans_from_solution(agent_paths, assigned_goals, arena_transform)
 
         response.error_msg = PlannerResponseTypes.SUCCESS
         response.args = [str(mapf_solution.sum_of_costs), str(mapf_solution.cpu_time)]
+        response.plan = self.get_plan_from_solution(agent_paths, assigned_goals, arena_transform)
+        self.get_logger().info("Plan request successful!")
 
         return response
     
@@ -174,7 +179,7 @@ class Planner(Node):
         response.error_msg = error_msg
         response.args = args
         # Publish no plan
-        self.publisher.publish(AgentPaths())
+        response.plan = AgentPaths()
         self.get_logger().info("Plan request failed!")
         return response
     
@@ -298,12 +303,12 @@ class Planner(Node):
         """
         return [[FALSE]*self.cols for i in range(self.rows)]
     
-    def publish_agent_plans_from_solution(
+    def get_plan_from_solution(
         self, 
         agent_paths: List[Path],
         assigned_goals: List[Tuple[str, Position]],
         arena_transform: TransformStamped
-    ) -> None:
+    ) -> AgentPaths:
         # The results are ordered by agent order we sent (assigned_goals sets the order)
         # This is relevant because agent_paths doesn't mention which path belongs to which agent id
         agent_transform_paths = AgentPaths()
@@ -318,8 +323,7 @@ class Planner(Node):
             for a_goal, path in zip(assigned_goals, agent_paths)
         ]
 
-        self.publisher.publish(agent_transform_paths)
-        self.get_logger().info("Plan request successful! Plans were published.")
+        return agent_transform_paths
 
     def revert_position_to_transform(self, pos: WayPoint, arena: TransformStamped) -> Transform:
         return Transform(
