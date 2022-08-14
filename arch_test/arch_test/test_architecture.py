@@ -2,7 +2,7 @@
 from time import sleep
 import rclpy
 from threading import Thread
-from .utils import AgentTestExecutor, GoalPublisher, FixedFrameBroadcaster
+from .utils import AgentTestExecutor, GoalPublisher, FixedFrameBroadcaster, SingleThreadNodePool
 
 from arch_components.planner import Planner
 from arch_components.manager import Manager
@@ -11,8 +11,8 @@ from geometry_msgs.msg import Vector3
 
 def test_planner_publishing():
     rclpy.init()
-    manager = Manager()
     planner = Planner()
+    manager = Manager()
     goal_publisher = GoalPublisher()
     a_01_executor = AgentTestExecutor("A_01")
     a_02_executor = AgentTestExecutor("A_02")
@@ -37,13 +37,10 @@ def test_planner_publishing():
         FixedFrameBroadcaster("arena", "O_04", Vector3(x=450.0, y=0.0, z=450.0)),
         FixedFrameBroadcaster("arena", "O_05", Vector3(x=550.0, y=0.0, z=450.0))
     ]
+    thread_pool = SingleThreadNodePool()
+    thread_pool.add_nodes(*node_list)
 
-    executor = rclpy.executors.MultiThreadedExecutor()
-    for node in node_list:
-        executor.add_node(node)
-
-    executor_thread = Thread(target=executor.spin, daemon=True)
-    executor_thread.start()
+    thread_pool.start()
     sleep(0.5)
 
     goal_publisher.publish_goal(Position(x=550.0, y=550.0, w=1.0))
@@ -55,9 +52,7 @@ def test_planner_publishing():
     goal_publisher.publish_goal(Position(x=350.0, y=550.0, w=1.0))
     goal_publisher.publish_goal(Position(x=250.0, y=550.0, w=1.0))
     a_02_executor.request_and_wait_for_response()
-    sleep(0.05)
     a_03_executor.request_and_wait_for_response()
-    sleep(0.1)
     a_04_executor.request_and_wait_for_response()
 
     while manager.unassigned_agents != []:
@@ -69,7 +64,6 @@ def test_planner_publishing():
         sleep(0.5)
     
     a_04_executor.disconect_and_reconnect()
-    sleep(0.1)
     goal_publisher.publish_goal(Position(x=150.0, y=550.0, w=1.0))
     
     while manager.unassigned_agents != []:
@@ -77,11 +71,8 @@ def test_planner_publishing():
     
     assert len(manager.unassigned_goals) == 1
 
-    for node in node_list:
-        node.destroy_node()
-    executor.shutdown()
+    thread_pool.stop()
     rclpy.shutdown()
-    executor_thread.join()
 
 
 def main(args=None):

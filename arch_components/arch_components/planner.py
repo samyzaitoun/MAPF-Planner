@@ -231,9 +231,6 @@ class Planner(Node):
             -> mocap  0 -------------->
                         0  1  2  3  4
         """
-        # DON'T MOVE THIS TO INIT (MODULE HAS SHARED MEMORY, RUNS ARE NOT ISOLATED)
-        self.mapf_solver: MAPFSolver = SOLVER_DICT[self.mapf_solver_class](self.time_limit)
-
         # Order of elements matters here (must be identical to the goals in assigned_goals)!
         assigned_agents = [a_goal[0] for a_goal in assigned_goals]
         assigned_agent_transforms = [agent_transforms[agent] for agent in assigned_agents]
@@ -286,7 +283,8 @@ class Planner(Node):
         mapf_instance = MapfInstance()
         mapf_instance.map = obstacle_map
 
-        # Initialize algorithm input
+        # Initialize algorithm class & input
+        mapf_solver: MAPFSolver = SOLVER_DICT[self.mapf_solver_class](self.time_limit)
         mapf_input: MAPFInput = SOLVER_DICT[self.mapf_input_class](
             map_instance=mapf_instance,
             starts_list=discrete_agents,
@@ -294,7 +292,7 @@ class Planner(Node):
         )
 
         # The following method call can throw (up)
-        return self.mapf_solver.solve(mapf_input)
+        return mapf_solver.solve(mapf_input)
 
     def create_empty_map(self) -> List[List[bool]]:
         """

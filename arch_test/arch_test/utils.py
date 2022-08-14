@@ -1,5 +1,8 @@
 
+from threading import Thread
 from time import sleep
+
+from attr import s
 import rclpy
 from typing import List, Tuple
 from rclpy.node import Node
@@ -105,3 +108,50 @@ class AgentTestExecutor(Node):
                 return
         
         self.get_logger().info(f"NO PATH PUBLISHED FOR {self.agent_id}")
+
+class SingleThreadNodePool:
+    node_list: List[Node]
+    executor_list: List[rclpy.executors.SingleThreadedExecutor]
+    thread_list: List[Thread]
+
+    def __init__(self):
+        self.node_list = []
+        self.executor_list = []
+        self.thread_list = []
+    
+    def add_nodes(self, *nodes: Tuple[Node]) -> None:
+        for node in nodes:
+            self.node_list.append(node)
+    
+    def start(self) -> None:
+        for node in self.node_list:
+            personal_exec = rclpy.executors.SingleThreadedExecutor()
+            personal_exec.add_node(node)
+            personal_thread = Thread(target=personal_exec.spin)
+            self.executor_list.append(personal_exec)
+            self.thread_list.append(personal_thread)
+        
+        for thread in self.thread_list:
+            thread.start()
+    
+    def add_nodes_after_start(self, *nodes: Tuple[Node]) -> None:
+        local_thread_list = []
+        for node in nodes:
+            personal_exec = rclpy.executors.SingleThreadedExecutor()
+            personal_exec.add_node(node)
+            personal_thread = Thread(target=personal_exec.spin)
+            self.executor_list.append(personal_exec)
+            local_thread_list.append(personal_thread)
+        
+        for thread in local_thread_list:
+            thread.start()
+        self.thread_list += local_thread_list
+
+    def stop(self) -> None:
+        for exec in self.executor_list:
+            exec.shutdown()
+        
+        for thread in self.thread_list:
+            thread.join()
+
+

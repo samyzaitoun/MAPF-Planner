@@ -11,7 +11,7 @@ from arch_interfaces.msg import Position
 from arch_interfaces.srv import AgentRequest
 from mock import MagicMock
 
-from .utils import FixedFrameBroadcaster, GoalPublisher, ManagerTestClient
+from .utils import FixedFrameBroadcaster, GoalPublisher, ManagerTestClient, SingleThreadNodePool
 
 def test_transform_broadcast():
     rclpy.init()
@@ -35,6 +35,7 @@ def test_transform_broadcast():
 
 def test_agent_requests():
     rclpy.init()
+    planner = Planner()
     manager = Manager()
 
     req_mock = MagicMock()
@@ -46,27 +47,12 @@ def test_agent_requests():
 
     assert manager.unassigned_agents == ["agent_1"]
 
-    # Check to see that the bus actually goes off
-    planner = Planner()
-    manager.unassigned_goals = [Position(x=0.0, y=0.0, w=0.0)]
-    manager.timer_callback()
-
-    assert manager.future_response
-
-    # Try to disconnect an agent ( should fail )
+    # Try to disconnect an agent ( should succeed )
     req_mock.agent_msg = ManagerRequestTypes.AGENT_DISCONNECTED
     response_mock = MagicMock()
     manager.agent_callback(req_mock, response_mock)
 
-    assert response_mock.error_msg == ManagerResponseTypes.RETRY
-    assert len(manager.unassigned_agents) == 1
-
-    manager.future_response = None
-    # Try to disconnect an agent ( should succeed )
-    manager.agent_callback(req_mock, response_mock)
-    
-    assert response_mock.error_msg == ManagerResponseTypes.AGENT_PLAN_CANCELED
-    assert len(manager.unassigned_agents) == 0
+    assert manager.unassigned_agents == []
 
     planner.destroy_node()
     manager.destroy_node()
@@ -74,10 +60,12 @@ def test_agent_requests():
 
 def test_goal_input():
     rclpy.init()
+    planner = Planner()
     manager = Manager()
     goal_publisher = GoalPublisher()
 
     executor = rclpy.executors.MultiThreadedExecutor()
+    executor.add_node(planner)
     executor.add_node(manager)
     executor.add_node(goal_publisher)
     executor_thread = Thread(target=executor.spin, daemon=True)
@@ -85,7 +73,7 @@ def test_goal_input():
 
     goal_1 = Position(x=50.0, y=50.0, w=1.0)
     goal_publisher.publish_goal(goal_1)
-    sleep(0.5)
+    sleep(0.1)
     assert manager.unassigned_goals == [goal_1]
     
     executor.shutdown()
@@ -96,56 +84,49 @@ def test_goal_input():
 
 def test_manager_live_request():
     rclpy.init()
+    planner = Planner()
     manager = Manager()
     goal_publisher = GoalPublisher()
     client = ManagerTestClient()
+    thread_pool = SingleThreadNodePool()
 
-    executor = rclpy.executors.MultiThreadedExecutor()
-    executor.add_node(manager)
-    executor.add_node(goal_publisher)
-    executor.add_node(client)
-    executor_thread = Thread(target=executor.spin, daemon=True)
-    executor_thread.start()
-
+    thread_pool.add_nodes(planner, manager, goal_publisher, client)
+    thread_pool.start()
     goal_publisher.publish_goal(Position(x=50.0, y=50.0, w=1.0))
     client.create_request(ManagerRequestTypes.IDLE, "agent_1")
 
-    sleep(0.5)
-    # See that nothing was triggered - the bus is still waiting ( since the service is not ready )
-    assert manager.unassigned_agents == ["agent_1"]
+    sleep(0.1)
+    # A plan request should've triggered & also fail because no transforms are published
+    # Agents are wiped on plan results, Goals are not
+    assert len(manager.unassigned_agents) == 0
+    assert len(manager.unassigned_goals) == 1
     assert client.response.result().error_msg == ManagerResponseTypes.WAIT_PLAN
-    assert manager.unassigned_goals != []
+    assert manager.future_response.result().error_msg == PlannerResponseTypes.TRANSFORM_FAILURE
 
-    # Add planner & tf publishings
+    # Add tf publishings
     arena_broadcaster = FixedFrameBroadcaster("world", "arena", Vector3(x=0.0, y=0.0, z=0.0), 0.01)
     agent_1_broadcaster = FixedFrameBroadcaster("arena", "agent_1", Vector3(x=500.0, y=0.0, z=500.0), 0.01)
-    planner = Planner()
 
-    executor.add_node(arena_broadcaster)
-    executor.add_node(agent_1_broadcaster)
+    thread_pool.add_nodes_after_start(arena_broadcaster, agent_1_broadcaster)
     sleep(0.1)
-    executor.add_node(planner)
-
+    client.create_request(ManagerRequestTypes.IDLE, "agent_1")
+    sleep(0.1)
+    
     # Wait for future response to be ready
-    while manager.assigned_goals == []:
+    while not manager.future_response.done():
         sleep(0.1)
-
+    
     # Check that indeed the goal & agent were assigned together
-    assert (
-        len(manager.assigned_goals) == 1 
-        and manager.unassigned_goals == [] 
-        and manager.unassigned_agents == []
-    )
+    assert len(manager.assigned_goals) == 1
+    assert manager.unassigned_goals == []
+    assert manager.unassigned_agents == []
 
-    executor.shutdown()
+    thread_pool.stop()
     manager.destroy_node()
     goal_publisher.destroy_node()
     client.destroy_node()
-    arena_broadcaster.destroy_node()
-    agent_1_broadcaster.destroy_node()
     planner.destroy_node()
     rclpy.shutdown()
-    executor_thread.join()
 
 def main(args=None):
     tests = [

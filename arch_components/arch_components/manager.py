@@ -1,17 +1,16 @@
 
 
+from time import sleep
 from typing import Iterable, List, Tuple, Type, Union
 
 import rclpy
 from rclpy.node import Node, Client, Service
+from rclpy.client import Future
 
-from arch_interfaces.msg import AssignedGoal, Position
+from arch_interfaces.msg import AssignedGoal, Position, AgentPaths
 from arch_interfaces.srv import PlanRequest , AgentRequest
 
 from .planner import PlannerResponseTypes
-
-DEFAULT_STALL_TIME = 0.1
-DEFAULT_IDLE_TIME = "0.05"
 
 # MSG Request strings
 class ManagerRequestTypes:
@@ -27,19 +26,32 @@ class ManagerResponseTypes:
     AGENT_PLAN_CANCELED = "AGENT_PLAN_CANCELED"
     INVALID_MESSAGE = "INVALID_MESSAGE"
 
+# TODO: Edge case - goal is in assigned_goals and in unassigned_goals
 class Manager(Node):
+    """
+    Manager component node implementation.
+
+    WARNING:
+    Do not execute this node in a multi-threaded executor!
+    Only through rclpy.spin or SingleThreadedExecutor
+    """
 
     def __init__(self):
         super().__init__("manager_component")
-        self.get_launch_parameters()
 
         self.assigned_goals: List[AssignedGoal] = []
         self.unassigned_goals: List[Position] = []
         self.unassigned_agents: List[str] = []
-        self.future_response = None
+        self.future_response: Future = None
 
         # Create client for plan request srv
         self.cli: Client = self.create_client(PlanRequest, 'plan_request')
+
+        # No reason to continue when we can't access the planner
+        self.get_logger().info("Waiting for Planner service...")
+        while not self.cli.service_is_ready():
+            pass
+        self.get_logger().info("Planner service ready!")
         self.agent_srv: Service = self.create_service(
             AgentRequest, "agent_request", self.agent_callback
         )
@@ -51,39 +63,17 @@ class Manager(Node):
             self.goal_callback,
             10
         )
-        self.goal_buffer: List[Position] = []
 
-        # The timer will be used to group a cluster of agents who want to queue again simulatenously
-        self.plan_timer = self.create_timer(self.plan_bus_timer, self.timer_callback)
-        self.plan_timer.cancel()
+        # Create plan publisher for agents
+        self.publisher = self.create_publisher(AgentPaths, "agent_paths", 1)
 
         self.get_logger().info("Finished Initializing manager component, Waiting for agent requests.")
-
-    def get_launch_parameters(self) -> None:
-
-        self.declare_parameter("plan_bus_timer", DEFAULT_STALL_TIME)
-        self.plan_bus_timer: float = (
-            self.get_parameter("plan_bus_timer").get_parameter_value().double_value
-        )
-
-        ## Agent forced idle time period
-        # NOTE: This is string type instead of float because of service message type
-        self.declare_parameter("force_idle_time_period", DEFAULT_IDLE_TIME)
-        self.force_idle_time_period: str = (
-            self.get_parameter("force_idle_time_period").get_parameter_value().string_value
-        )
 
     def agent_callback(self, request, response) -> AgentRequest.Response:
 
         # Extract request arguments
         agent_msg = request.agent_msg
         agent_id = request.agent_id
-
-        if self.future_response:
-            response.error_msg = ManagerResponseTypes.RETRY
-            response.args = [self.force_idle_time_period]
-            self.get_logger().info(f"AGENT REQUEST DENIED: {agent_id}")
-            return response
 
         if agent_msg == ManagerRequestTypes.IDLE:
             return self.idle_agent_handler(agent_id, response)
@@ -103,27 +93,45 @@ class Manager(Node):
         return response
 
     def goal_callback(self, msg: Position) -> None:
-        if msg in self.unassigned_goals or msg in self.goal_buffer:
+        """
+        Add published goal to the manager.
+        While this method is quite simple, there's some thinking behind this.
+        For example, how can we assure that during planner response (which btw, 
+        overrides the values of the unassigned goals list), any goals listed here
+        are not lost because of scheduling order? Well this is quite simple because
+        there are 2 possible scenarios:
+        A. The planner response is not ready - and we simply cancel it and reorder
+        it with the new goal list.
+        B. The planner response is ready - but we queue another planner response.
+        If the scheduler has already handled the response callback - then we are working
+        with the updated dataset, and adding the goal is fine. If the scheduler hasn't already
+        handled the response - then it will get caught in the callback (as we checked for this
+        possible race-condition).
+        Coincedentally, this is also correct for all the other methods which augment 
+        the underlying data structures in manager, so I won't detail this again in other methods.
+        """
+        if msg in self.unassigned_goals:
             return
-        # We can't accept goals during plan request (since response overrides unassigned goals)
-        if self.future_response:
-            self.goal_buffer.append(msg)
-        else:
-            self.unassigned_goals.append(msg)
+        self.unassigned_goals.append(msg)
         self.get_logger().info(f"GOAL LISTED: {msg}")
+
+        self.call_planner_async()
 
     def idle_agent_handler(self, 
         agent_id: str, 
         response: AgentRequest.Response
     ) -> AgentRequest.Response:
         """
-        Queues agent, starts/restarts bus timer
+        Queues agent, sends plan request
         """
         assert agent_id not in self.unassigned_agents
         self.unassigned_agents.append(agent_id)
-        self.plan_timer.reset() # Start/Reset the timer
-
         self.get_logger().info(f"AGENT LISTED: {agent_id}")
+
+        # Trigger a plan request only when there are unassigned goals
+        if len(self.unassigned_goals) != 0:
+            self.call_planner_async()
+
         response.error_msg = ManagerResponseTypes.WAIT_PLAN
         return response
 
@@ -132,7 +140,7 @@ class Manager(Node):
         response: AgentRequest.Response
     ) -> AgentRequest.Response:
         """
-        Removes agent from assigned list & requeues agent
+        Removes agent from assigned list and calls him on idle_agent handler
         """
         self.remove_agent_from_assigned_list(agent_id)
         
@@ -144,7 +152,7 @@ class Manager(Node):
         response: AgentRequest.Response
     ) -> AgentRequest.Response:
         """
-        Removes agent from assigned list, requeues goal & requeues agent
+        Removes agent from assigned list, requeues goal and calls idle_agent handler
         """
         assigned_goal = self.remove_agent_from_assigned_list(agent_id)
         if assigned_goal != None:
@@ -165,6 +173,8 @@ class Manager(Node):
         if assigned_goal != None:
             self.unassigned_goals.append(assigned_goal.pos)
 
+        self.call_planner_async()
+
         response.error_msg = ManagerResponseTypes.AGENT_PLAN_CANCELED
         return response
 
@@ -181,44 +191,17 @@ class Manager(Node):
             self.get_logger().info(f"AGENT DEQUEUED: {agent_id}")
         except ValueError:
             pass
-
-    def timer_callback(self) -> None:
-        self.get_logger().info("Timer callback triggered")
-        if (
-            self.unassigned_goals == []
-            or not self.cli.service_is_ready()
-        ):
-            return
+    
+    def call_planner_async(self) -> None:
+        self.get_logger().info("---Calling Plan Request---")
+        if self.future_response and not self.future_response.done():
+            self.get_logger().info("Canceling previous plan request!")
+            self.future_response.cancel()
+            self.get_logger().info("Cancel success!")
         
-        if self.unassigned_agents == []: # Can happen if an agent disconnects
-            self.plan_timer.cancel()
-        
-        # Check if plan request was already made
-        if not self.future_response:
-            self.send_plan_request()
-            return
-        
-        if not self.future_response.done():
-            return
-        response = self.future_response.result()
-        if not response.error_msg == PlannerResponseTypes.SUCCESS:
-            self.get_logger().info(f"Plan Request Failed: {response.error_msg}")
-        else:
-            self.assigned_goals = response.assigned_goals
-            self.unassigned_goals = response.unassigned_goals
-        
-        # Reset response and clear buffers / irrelevant data
-        self.merge_and_clear_goal_buffer(self.unassigned_goals)
-        # Agents always get cleared - executor needs to manually retry
-        self.unassigned_agents.clear()
-        self.future_response = None
-        
-        
-        # Cancel timer
-        self.plan_timer.cancel()
+        self.send_plan_request()
     
     def send_plan_request(self) -> None:
-
         pr = PlanRequest.Request()
         pr.assigned_goals = self.assigned_goals
         pr.unassigned_goals = self.unassigned_goals
@@ -226,13 +209,40 @@ class Manager(Node):
         
         # sync request
         self.future_response = self.cli.call_async(pr)
+        self.future_response.add_done_callback(self.plan_done_callback)
+        self.get_logger().info("New plan request sent!")
     
-    def merge_and_clear_goal_buffer(self, goals: List[Position]) -> None:
-        for buffered_goal in self.goal_buffer:
-            if buffered_goal in goals:
-                continue
-            goals.append(buffered_goal)
-        self.goal_buffer.clear()
+    def plan_done_callback(self, future_response) -> None:
+        """
+        Please note that this callback is also triggered when we cancel the request.
+        Moreover, future_response.done is evaluted on the manager thread.
+        Also, the callback passes us the future it was called with.
+        But since we locally adjust the future response when new requests are done,
+        then the previous future response may no longer be relevant, hence why it is
+        not needed.
+        """
+        # A possible race-cond scenario, where a new plan triggered but the callback
+        # was already queued to the executor.
+        self.get_logger().info("Plan-done callback Triggered")
+        if (
+            future_response != self.future_response # Checks if a new request was done & callback still exists
+            or not future_response.done()           # Checks if request was canceled
+        ):
+            self.get_logger().info(f"Future response is not ready.")
+            return
+
+        response = self.future_response.result()
+        if not response.error_msg == PlannerResponseTypes.SUCCESS:
+            self.get_logger().info(f"Plan Request Failed: {response.error_msg}")
+        else:
+            self.assigned_goals = response.assigned_goals
+            self.unassigned_goals = response.unassigned_goals
+        
+        self.publisher.publish(response.plan)
+        
+        # Reset response and clear buffers / irrelevant data
+        # Agents always get cleared - executor needs to manually retry
+        self.unassigned_agents.clear()
 
 
 def main(args=None):
