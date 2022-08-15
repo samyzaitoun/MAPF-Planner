@@ -128,7 +128,6 @@ class Planner(Node):
                 args=[str(ex)] + agent_ids + list(obstacle_ids)
             )
 
-
         # Assign goals
         try:
             newly_assigned_goals, unassigned_goals = self.goal_assigner.assign_goals_to_agents(
@@ -149,18 +148,14 @@ class Planner(Node):
             (m.agent_id, m.pos) for m in assigned_goals
         ]
 
-
         # Solve MAPF using data
         try:
             mapf_solution = self.generate_and_solve_map(
                 agent_transformations, assigned_goals, obstacle_transformations
             )
-        except Exception as ex:
-            # Just pointing this out that the library throws errors directly inherited from Exception (!!!)
-            # Someone please fix their inheritance to AssertionError!
+        except MapfException as ex:
             return self.failed_plan_handler(response, PlannerResponseTypes.FAILED_MAP_SOLVE, [str(ex)])
 
-        
         agent_paths: List[Path] = mapf_solution.paths
 
         response.error_msg = PlannerResponseTypes.SUCCESS
@@ -238,8 +233,7 @@ class Planner(Node):
         # Discretize agent, goal & obstacle positions into board
         discrete_agents = [
             WayPoint(
-                x=int(agent.transform.translation.x / self.agent_diameter),
-                y=int(agent.transform.translation.z / self.agent_diameter),
+                *self.extract_x_and_y_dims(agent)
             )
             for agent in assigned_agent_transforms
         ]
@@ -252,10 +246,7 @@ class Planner(Node):
             for goal in assigned_goals
         ]
         discrete_obstacles = [
-            (
-                int(obstacle.transform.translation.x / self.agent_diameter),
-                int(obstacle.transform.translation.z / self.agent_diameter),
-            )
+            self.extract_x_and_y_dims(obstacle)
             for obstacle in obstacle_transforms.values()
         ]
 
@@ -294,6 +285,12 @@ class Planner(Node):
         # The following method call can throw (up)
         return mapf_solver.solve(mapf_input)
 
+    def extract_x_and_y_dims(self, frame: TransformStamped) -> Tuple[int, int]:
+        return (
+            int(frame.transform.translation.x / self.agent_diameter),
+            int(frame.transform.translation.z / self.agent_diameter)
+        )
+
     def create_empty_map(self) -> List[List[bool]]:
         """
         We're using the map input representation required by the algorithm library.
@@ -326,9 +323,9 @@ class Planner(Node):
     def revert_position_to_transform(self, pos: WayPoint, arena: TransformStamped) -> Transform:
         return Transform(
             translation=Vector3(
-                x = float((pos.x * self.agent_diameter + self.agent_diameter/2) + arena.transform.translation.x),
+                x = float(pos.x * self.agent_diameter + self.agent_diameter/2),
                 y = arena.transform.translation.y,
-                z = float((pos.y * self.agent_diameter + self.agent_diameter/2) + arena.transform.translation.z)
+                z = float(pos.y * self.agent_diameter + self.agent_diameter/2)
             )
         )
 
