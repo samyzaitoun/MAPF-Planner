@@ -1,6 +1,7 @@
 AssignedGoal[] assigned_goals
 Position[] unassigned_goals
 string[] unassigned_agents
+float64 time
 ---
 string error_msg
 string[] args

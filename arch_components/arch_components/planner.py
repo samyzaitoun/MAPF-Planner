@@ -1,4 +1,5 @@
 
+from time import sleep
 from .planner_config import *
 
 class PlannerResponseTypes:
@@ -18,6 +19,9 @@ class Planner(Node):
     plan_subscription: Subscription = None
     tf_subscription: Subscription = None
 
+    _latest_thread: Thread = None
+    _latest_thread_time: float = -math.inf
+
     def __init__(self):
         super().__init__("planner_component")
 
@@ -35,6 +39,8 @@ class Planner(Node):
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
         self.goal_assigner: GoalAssigner = ASSIGNER_DICT[self.goal_assigner_class]()
+
+        self._thread_lock: Lock = Lock()
 
         self.get_logger().info("Finished Initializing planner component, Waiting for plan requests.")
 
@@ -93,8 +99,47 @@ class Planner(Node):
         self.time_limit: float = (
             self.get_parameter("time_limit").get_parameter_value().double_value
         )
-
+    
     def plan_callback(self, request, response):
+        request_time = request.time
+        self._thread_lock.acquire()
+        if self._latest_thread_time < request_time:
+            if self._latest_thread:
+                self._latest_thread._stop()
+            self._latest_thread_time = request_time
+            self._latest_thread = Thread(target=self.plan, args=(request, response))
+            self._latest_thread.start()
+        else:
+            self._thread_lock.release()
+            return self.failed_plan_handler(
+                response,
+                error_msg=PlannerResponseTypes.ABORTED,
+                args=[]
+            )
+        self._thread_lock.release()
+            
+        self._latest_thread.join()
+
+        self._thread_lock.acquire()
+        if (
+            not self._plan_thread_response
+            or self._latest_thread_time > request_time
+        ):
+            self._thread_lock.release()
+            return self.failed_plan_handler(
+                response,
+                error_msg=PlannerResponseTypes.ABORTED,
+                args=[]
+            )
+        response = self._plan_thread_response
+        self._plan_thread_response = None
+        self._latest_thread = None
+        self._thread_lock.release()
+
+        return response
+        
+
+    def plan(self, request, response):
 
         self.get_logger().info("Plan callback triggered")
 
@@ -165,7 +210,7 @@ class Planner(Node):
         response.plan = self.get_plan_from_solution(agent_paths, assigned_goals)
         self.get_logger().info("Plan request successful!")
 
-        return response
+        self._plan_thread_response = response
     
     def failed_plan_handler(
         self,
