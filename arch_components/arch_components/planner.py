@@ -8,6 +8,8 @@ class PlannerResponseTypes:
     FAILED_MAP_SOLVE = "FAILED_MAP_SOLVE"
     INVALID_INPUT = "INVALID_INPUT"
 
+MOCAP = "mocap"
+
 class Planner(Node):
     """
     The Planner component node implementation
@@ -111,6 +113,7 @@ class Planner(Node):
         agent_ids = unassigned_agents + [m.agent_id for m in assigned_goals]
         try:
             obstacle_ids = self.get_all_frame_ids().difference(agent_ids + [self.arena_frame])
+            self.get_logger().info(f"Obstacle IDs: {obstacle_ids}")
         except AttributeError as ex:
             return self.failed_plan_handler(response, PlannerResponseTypes.TRANSFORM_FAILURE, [str(ex)])
 
@@ -119,7 +122,6 @@ class Planner(Node):
             now = rclpy.time.Time()
             agent_transformations = self.get_frame_transformations(self.arena_frame, agent_ids, now)
             obstacle_transformations = self.get_frame_transformations(self.arena_frame, obstacle_ids, now)
-            arena_transform = self.get_frame_transformations("world", [self.arena_frame], now)[self.arena_frame]
 
         except TransformException as ex:
             return self.failed_plan_handler(
@@ -160,7 +162,7 @@ class Planner(Node):
 
         response.error_msg = PlannerResponseTypes.SUCCESS
         response.args = [str(mapf_solution.sum_of_costs), str(mapf_solution.cpu_time)]
-        response.plan = self.get_plan_from_solution(agent_paths, assigned_goals, arena_transform)
+        response.plan = self.get_plan_from_solution(agent_paths, assigned_goals)
         self.get_logger().info("Plan request successful!")
 
         return response
@@ -180,9 +182,11 @@ class Planner(Node):
     
     def get_all_frame_ids(self) -> Set[str]:
         return set(
-            yaml.safe_load(
-                self.tf_buffer.all_frames_as_yaml()
-            ).keys()
+            [
+                frame_id for frame_id in (yaml.safe_load(
+                    self.tf_buffer.all_frames_as_yaml()
+                ).keys()) if MOCAP not in frame_id
+            ]
         )
     
     def get_frame_transformations(
@@ -288,7 +292,7 @@ class Planner(Node):
     def extract_x_and_y_dims(self, frame: TransformStamped) -> Tuple[int, int]:
         return (
             int(frame.transform.translation.x / self.agent_diameter),
-            int(frame.transform.translation.z / self.agent_diameter)
+            int(frame.transform.translation.y / self.agent_diameter)
         )
 
     def create_empty_map(self) -> List[List[bool]]:
@@ -301,8 +305,7 @@ class Planner(Node):
     def get_plan_from_solution(
         self, 
         agent_paths: List[Path],
-        assigned_goals: List[Tuple[str, Position]],
-        arena_transform: TransformStamped
+        assigned_goals: List[Tuple[str, Position]]
     ) -> AgentPaths:
         # The results are ordered by agent order we sent (assigned_goals sets the order)
         # This is relevant because agent_paths doesn't mention which path belongs to which agent id
@@ -311,7 +314,7 @@ class Planner(Node):
             AssignedPath(
                 agent_id=a_goal[0],
                 path=[
-                    self.revert_position_to_transform(waypoint.position, arena_transform)
+                    self.revert_position_to_transform(waypoint.position)
                     for waypoint in path
                 ]
             )
@@ -320,12 +323,12 @@ class Planner(Node):
 
         return agent_transform_paths
 
-    def revert_position_to_transform(self, pos: WayPoint, arena: TransformStamped) -> Transform:
+    def revert_position_to_transform(self, pos: WayPoint) -> Transform:
         return Transform(
             translation=Vector3(
                 x = float(pos.x * self.agent_diameter + self.agent_diameter/2),
-                y = arena.transform.translation.y,
-                z = float(pos.y * self.agent_diameter + self.agent_diameter/2)
+                y = float(pos.y * self.agent_diameter + self.agent_diameter/2),
+                z = 0.0,
             )
         )
 

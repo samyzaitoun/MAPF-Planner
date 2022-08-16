@@ -23,7 +23,8 @@ setup(
             'test_interfaces = arch_test.test_interfaces:main',
             'test_planner = arch_test.test_planner:main',
             'test_manager = arch_test.test_manager:main',
-            'test_architecture = arch_test.test_architecture:main'
+            'test_architecture = arch_test.test_architecture:main',
+            'test_live = arch_test.test_live:main'
         ],
     },
 )

@@ -109,6 +109,34 @@ class AgentTestExecutor(Node):
         
         self.get_logger().info(f"NO PATH PUBLISHED FOR {self.agent_id}")
 
+class AgentDummyExecutor(Node):
+    def __init__(self):
+        super().__init__("dummy_executor")
+        self.cli = self.create_client(AgentRequest, 'agent_request')
+        self.subscription = self.create_subscription(AgentPaths, 'agent_paths', self.sol_callback, 10)
+    
+    def send_cli_request(self, agent_id: str, request_type: ManagerRequestTypes) -> None:
+        while not self.cli.service_is_ready():
+            self.get_logger().info("Manager Service not ready.")
+            sleep(0.1)
+        self.cli.call_async(AgentRequest.Request(agent_msg=request_type, agent_id=agent_id))
+    
+    def sol_callback(self, msg: AgentPaths):
+        agent_paths: List[AssignedPath] = msg.agent_paths
+        for assigned_path in agent_paths:
+            string_solution = '-->'.join(
+                [
+                    f"({format(point.translation.x, '.2f')}, {format(point.translation.y, '.2f')})" 
+                    for point in assigned_path.path
+                ]
+            )
+            self.get_logger().info(
+                f"""
+                Agent '{assigned_path.agent_id}' received the path:
+                {string_solution}
+                """
+            )
+
 class SingleThreadNodePool:
     node_list: List[Node]
     executor_list: List[rclpy.executors.SingleThreadedExecutor]
