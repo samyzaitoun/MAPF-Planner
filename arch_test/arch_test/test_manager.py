@@ -105,7 +105,7 @@ def test_manager_live_request():
 
     # Add tf publishings
     arena_broadcaster = FixedFrameBroadcaster("world", "arena", Vector3(x=0.0, y=0.0, z=0.0), 0.01)
-    agent_1_broadcaster = FixedFrameBroadcaster("arena", "agent_1", Vector3(x=500.0, y=0.0, z=500.0), 0.01)
+    agent_1_broadcaster = FixedFrameBroadcaster("arena", "agent_1", Vector3(x=500.0, y=500.0, z=0.0), 0.01)
 
     thread_pool.add_nodes_after_start(arena_broadcaster, agent_1_broadcaster)
     sleep(0.1)
