@@ -18,7 +18,7 @@ from mapf_solver.Abstract_objects.waypoint import WayPoint
 from mapf_solver.Abstract_objects.mapf_solver import MAPFSolver, MAPFInput, MAPFOutput
 from mapf_solver.Abstract_objects.path import Path
 from mapf_solver.Abstract_objects.map_instance import MapfInstance
-from mapf_solver.MAPF_exceptions.exceptions import MapfException
+from mapf_solver.MAPF_exceptions.exceptions import MapfException, RequestAborted
 from mapf_solver.Concrete_objects.concrete_waypoints import TimedWayPoint
 
 from mapf_solver.MAPFSolvers.pbs import CBSInput, CBSSolver, PBSInput, PBSSolver
