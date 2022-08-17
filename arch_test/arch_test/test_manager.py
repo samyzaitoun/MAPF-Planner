@@ -115,6 +115,7 @@ def test_manager_live_request():
     # Wait for future response to be ready
     while not manager.future_response.done():
         sleep(0.1)
+    sleep(0.1)
     
     # Check that indeed the goal & agent were assigned together
     assert len(manager.assigned_goals) == 1

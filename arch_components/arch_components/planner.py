@@ -1,6 +1,7 @@
 
 from time import sleep
 from .planner_config import *
+from rclpy.callback_groups import ReentrantCallbackGroup
 
 class PlannerResponseTypes:
     SUCCESS = "SUCCESS"
@@ -8,6 +9,7 @@ class PlannerResponseTypes:
     FAILED_GOAL_ASSIGN = "FAILED_GOAL_ASSIGN"
     FAILED_MAP_SOLVE = "FAILED_MAP_SOLVE"
     INVALID_INPUT = "INVALID_INPUT"
+    ABORTED = "ABORTED"
 
 MOCAP = "mocap"
 
@@ -21,6 +23,7 @@ class Planner(Node):
 
     _latest_thread: Thread = None
     _latest_thread_time: float = -math.inf
+    thread_id = 0
 
     def __init__(self):
         super().__init__("planner_component")
@@ -28,7 +31,7 @@ class Planner(Node):
         self.load_launch_parameters()
 
         self.plan_srv: Service = self.create_service(
-            PlanRequest, "plan_request", self.plan_callback
+            PlanRequest, "plan_request", self.plan_callback, callback_group=ReentrantCallbackGroup()
         )
 
         self.rows = int(self.arena_height / self.agent_diameter)
@@ -102,42 +105,26 @@ class Planner(Node):
     
     def plan_callback(self, request, response):
         request_time = request.time
-        self._thread_lock.acquire()
-        if self._latest_thread_time < request_time:
-            if self._latest_thread:
-                self._latest_thread._stop()
+        stop_thread = None
+
+        with self._thread_lock:
+            if self._latest_thread_time > request_time:
+                response.error_msg = PlannerResponseTypes.ABORTED
+                return response
+
+            stop_thread = self._latest_thread
+
             self._latest_thread_time = request_time
-            self._latest_thread = Thread(target=self.plan, args=(request, response))
-            self._latest_thread.start()
-        else:
-            self._thread_lock.release()
-            return self.failed_plan_handler(
-                response,
-                error_msg=PlannerResponseTypes.ABORTED,
-                args=[]
-            )
-        self._thread_lock.release()
-            
-        self._latest_thread.join()
+            curr_thread = Thread(target=self.plan, args=(request, response))
 
-        self._thread_lock.acquire()
-        if (
-            not self._plan_thread_response
-            or self._latest_thread_time > request_time
-        ):
-            self._thread_lock.release()
-            return self.failed_plan_handler(
-                response,
-                error_msg=PlannerResponseTypes.ABORTED,
-                args=[]
-            )
-        response = self._plan_thread_response
-        self._plan_thread_response = None
-        self._latest_thread = None
-        self._thread_lock.release()
+            self._latest_thread = curr_thread
+            curr_thread.start()
 
+        if stop_thread:
+            stop_thread._stop()
+
+        curr_thread.join()
         return response
-        
 
     def plan(self, request, response):
 
@@ -149,18 +136,24 @@ class Planner(Node):
         unassigned_agents: Iterable[str] = request.unassigned_agents
 
         if unassigned_agents == [] or unassigned_goals == []:
-            return self.failed_plan_handler(
+            self.failed_plan_handler(
                 response,
                 error_msg=PlannerResponseTypes.INVALID_INPUT,
                 args=[]
             )
+            return
         
         agent_ids = unassigned_agents + [m.agent_id for m in assigned_goals]
         try:
             obstacle_ids = self.get_all_frame_ids().difference(agent_ids + [self.arena_frame])
             self.get_logger().info(f"Obstacle IDs: {obstacle_ids}")
         except AttributeError as ex:
-            return self.failed_plan_handler(response, PlannerResponseTypes.TRANSFORM_FAILURE, [str(ex)])
+            self.failed_plan_handler(
+                response, 
+                PlannerResponseTypes.TRANSFORM_FAILURE, 
+                [str(ex)]
+            )
+            raise
 
         # Retrieve agent/obstacle locations in arena
         try:
@@ -169,11 +162,12 @@ class Planner(Node):
             obstacle_transformations = self.get_frame_transformations(self.arena_frame, obstacle_ids, now)
 
         except TransformException as ex:
-            return self.failed_plan_handler(
+            self.failed_plan_handler(
                 response, 
                 error_msg=PlannerResponseTypes.TRANSFORM_FAILURE, 
                 args=[str(ex)] + agent_ids + list(obstacle_ids)
             )
+            raise
 
         # Assign goals
         try:
@@ -184,7 +178,12 @@ class Planner(Node):
             )
             assigned_goals += newly_assigned_goals
         except AssigningGoalsException as ex:
-            return self.failed_plan_handler(response, PlannerResponseTypes.FAILED_GOAL_ASSIGN, [str(ex)])
+            self.failed_plan_handler(
+                response, 
+                PlannerResponseTypes.FAILED_GOAL_ASSIGN, 
+                [str(ex)]
+            )
+            raise
 
         # In case of successful planning, manager needs to know who was assigned to what
         response.assigned_goals = assigned_goals
@@ -201,7 +200,12 @@ class Planner(Node):
                 agent_transformations, assigned_goals, obstacle_transformations
             )
         except MapfException as ex:
-            return self.failed_plan_handler(response, PlannerResponseTypes.FAILED_MAP_SOLVE, [str(ex)])
+            self.failed_plan_handler(
+                response, 
+                PlannerResponseTypes.FAILED_MAP_SOLVE, 
+                [str(ex)]
+            )
+            raise
 
         agent_paths: List[Path] = mapf_solution.paths
 
@@ -209,8 +213,6 @@ class Planner(Node):
         response.args = [str(mapf_solution.sum_of_costs), str(mapf_solution.cpu_time)]
         response.plan = self.get_plan_from_solution(agent_paths, assigned_goals)
         self.get_logger().info("Plan request successful!")
-
-        self._plan_thread_response = response
     
     def failed_plan_handler(
         self,
@@ -223,7 +225,7 @@ class Planner(Node):
         # Publish no plan
         response.plan = AgentPaths()
         self.get_logger().info("Plan request failed!")
-        return response
+        # self._plan_thread_response = response
     
     def get_all_frame_ids(self) -> Set[str]:
         return set(

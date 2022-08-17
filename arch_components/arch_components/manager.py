@@ -1,6 +1,7 @@
 
 
 from time import sleep
+import time
 from typing import Iterable, List, Tuple, Type, Union
 
 import rclpy
@@ -195,9 +196,8 @@ class Manager(Node):
     def call_planner_async(self) -> None:
         self.get_logger().info("---Calling Plan Request---")
         if self.future_response and not self.future_response.done():
-            self.get_logger().info("Canceling previous plan request!")
+            self.get_logger().info("Canceling previous plan future callback!")
             self.future_response.cancel()
-            self.get_logger().info("Cancel success!")
         
         self.send_plan_request()
     
@@ -206,6 +206,7 @@ class Manager(Node):
         pr.assigned_goals = self.assigned_goals
         pr.unassigned_goals = self.unassigned_goals
         pr.unassigned_agents = self.unassigned_agents
+        pr.time = time.time()
         
         # sync request
         self.future_response = self.cli.call_async(pr)

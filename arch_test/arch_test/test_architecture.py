@@ -20,7 +20,6 @@ def test_planner_publishing():
     a_04_executor = AgentTestExecutor("A_04")
     node_list = [
         manager, 
-        planner, 
         goal_publisher, 
         a_01_executor,
         a_02_executor,
@@ -39,6 +38,12 @@ def test_planner_publishing():
     ]
     thread_pool = SingleThreadNodePool()
     thread_pool.add_nodes(*node_list)
+
+    # We want multiple threads to execute the planner
+    executor = rclpy.executors.MultiThreadedExecutor()
+    executor.add_node(planner)
+    executor_thread = Thread(target=executor.spin)
+    executor_thread.start()
 
     thread_pool.start()
     sleep(0.5)
@@ -72,6 +77,8 @@ def test_planner_publishing():
     assert len(manager.unassigned_goals) == 1
 
     thread_pool.stop()
+    executor.shutdown()
+    executor_thread.join()
     rclpy.shutdown()
 
 
