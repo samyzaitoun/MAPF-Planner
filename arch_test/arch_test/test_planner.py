@@ -60,31 +60,27 @@ def test_transformation_listening():
         )
     except Exception as e:
         raise AssertionError(str(e))
-    planner.destroy_node()
-    br.destroy_node()
     rclpy.shutdown()
 
 def test_successful_plan_request():
     rclpy.init()
     planner = Planner()
-    planner.publisher = MagicMock()
     br = TestFrameBroadcaster()
 
-    mock_plan_request = MagicMock()
-    mock_plan_request.assigned_goals = []
-    mock_plan_request.unassigned_goals = [Position(x=550.0, y=0.0, w=1.0)]
-    mock_plan_request.unassigned_agents = ["agent_0"]
+    mock_goal_handle = MagicMock()
+    mock_goal_handle.request.assigned_goals = []
+    mock_goal_handle.request.unassigned_goals = [Position(x=550.0, y=0.0, w=1.0)]
+    mock_goal_handle.request.unassigned_agents = ["agent_0"]
+    mock_goal_handle.is_cancel_requested = False
 
     br.broadcast_agent("agent_0", (50.0, 0.0, 50.0))
     rclpy.spin_once(planner)
     br.broadcast_arena()
     rclpy.spin_once(planner)
 
-    res = planner.plan_callback(request=mock_plan_request, response=MagicMock())
+    res = planner.plan_callback(goal_handle=mock_goal_handle)
     assert res.error_msg == PlannerResponseTypes.SUCCESS
 
-    planner.destroy_node()
-    br.destroy_node()
     rclpy.shutdown()
 
 def main(args=None):

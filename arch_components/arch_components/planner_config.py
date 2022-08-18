@@ -7,7 +7,7 @@ import rclpy
 from rclpy.node import Node, Publisher, Subscription, Service
 
 from arch_interfaces.msg import AssignedGoal, Position, AssignedPath, AgentPaths
-from arch_interfaces.srv import PlanRequest
+from arch_interfaces.action import PlanRequest
 from geometry_msgs.msg import Transform, Vector3
 
 from tf2_ros import TransformException, TransformStamped

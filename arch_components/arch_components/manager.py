@@ -4,11 +4,14 @@ from time import sleep
 from typing import Iterable, List, Tuple, Type, Union
 
 import rclpy
-from rclpy.node import Node, Client, Service
+from rclpy.node import Node, Service
 from rclpy.client import Future
+from rclpy.action import ActionClient
 
+from action_msgs.msg import GoalStatus
 from arch_interfaces.msg import AssignedGoal, Position, AgentPaths
-from arch_interfaces.srv import PlanRequest , AgentRequest
+from arch_interfaces.srv import AgentRequest
+from arch_interfaces.action import PlanRequest
 
 from .planner import PlannerResponseTypes
 
@@ -42,15 +45,18 @@ class Manager(Node):
         self.assigned_goals: List[AssignedGoal] = []
         self.unassigned_goals: List[Position] = []
         self.unassigned_agents: List[str] = []
+
+        self.future_goal: Future = None
         self.future_response: Future = None
+        self.goal_handle = None
 
         # Create client for plan request srv
-        self.cli: Client = self.create_client(PlanRequest, 'plan_request')
+        self.action_cli = ActionClient(self, PlanRequest, 'plan_request')
 
         # No reason to continue when we can't access the planner
-        self.get_logger().info("Waiting for Planner service...")
-        while not self.cli.service_is_ready():
-            pass
+        self.get_logger().info("Waiting for Planner Action Service...")
+        self.action_cli.wait_for_server()
+
         self.get_logger().info("Planner service ready!")
         self.agent_srv: Service = self.create_service(
             AgentRequest, "agent_request", self.agent_callback
@@ -94,21 +100,7 @@ class Manager(Node):
 
     def goal_callback(self, msg: Position) -> None:
         """
-        Add published goal to the manager.
-        While this method is quite simple, there's some thinking behind this.
-        For example, how can we assure that during planner response (which btw, 
-        overrides the values of the unassigned goals list), any goals listed here
-        are not lost because of scheduling order? Well this is quite simple because
-        there are 2 possible scenarios:
-        A. The planner response is not ready - and we simply cancel it and reorder
-        it with the new goal list.
-        B. The planner response is ready - but we queue another planner response.
-        If the scheduler has already handled the response callback - then we are working
-        with the updated dataset, and adding the goal is fine. If the scheduler hasn't already
-        handled the response - then it will get caught in the callback (as we checked for this
-        possible race-condition).
-        Coincedentally, this is also correct for all the other methods which augment 
-        the underlying data structures in manager, so I won't detail this again in other methods.
+        Add published goal to the manager, Trigger plan callback
         """
         if msg in self.unassigned_goals:
             return
@@ -196,23 +188,34 @@ class Manager(Node):
         self.get_logger().info("---Calling Plan Request---")
         if self.future_response and not self.future_response.done():
             self.get_logger().info("Canceling previous plan request!")
+            self.goal_handle.cancel_goal_async()
             self.future_response.cancel()
             self.get_logger().info("Cancel success!")
         
         self.send_plan_request()
     
     def send_plan_request(self) -> None:
-        pr = PlanRequest.Request()
+        pr = PlanRequest.Goal()
         pr.assigned_goals = self.assigned_goals
         pr.unassigned_goals = self.unassigned_goals
         pr.unassigned_agents = self.unassigned_agents
         
         # sync request
-        self.future_response = self.cli.call_async(pr)
-        self.future_response.add_done_callback(self.plan_done_callback)
-        self.get_logger().info("New plan request sent!")
+        self.future_goal = self.action_cli.send_goal_async(pr)
+        self.future_goal.add_done_callback(self.goal_response_callback)
+        self.get_logger().info("New plan goal sent!")
     
-    def plan_done_callback(self, future_response) -> None:
+    def goal_response_callback(self, future_goal: Future) -> None:
+        goal_handle = future_goal.result()
+        if self.future_goal != future_goal:
+            goal_handle.cancel_goal_async()
+            return
+        self.get_logger().info("Plan goal accepted, setting up plan-done callback")
+        self.goal_handle = goal_handle
+        self.future_response = self.goal_handle.get_result_async()
+        self.future_response.add_done_callback(self.plan_done_callback)
+    
+    def plan_done_callback(self, future_response: Future) -> None:
         """
         Please note that this callback is also triggered when we cancel the request.
         Moreover, future_response.done is evaluted on the manager thread.
@@ -228,10 +231,10 @@ class Manager(Node):
             future_response != self.future_response # Checks if a new request was done & callback still exists
             or not future_response.done()           # Checks if request was canceled
         ):
-            self.get_logger().info(f"Future response is not ready.")
+            self.get_logger().info(f"Ignoring Plan-done callback")
             return
 
-        response = self.future_response.result()
+        response = self.future_response.result().result
         if not response.error_msg == PlannerResponseTypes.SUCCESS:
             self.get_logger().info(f"Plan Request Failed: {response.error_msg}")
         else:

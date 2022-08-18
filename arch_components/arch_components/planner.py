@@ -139,7 +139,12 @@ class Planner(Node):
         try:
             obstacle_ids = self.get_all_frame_ids().difference(agent_ids + [self.arena_frame])
         except AttributeError as ex:
-            return self.failed_plan_handler(response, PlannerResponseTypes.TRANSFORM_FAILURE, [str(ex)])
+            return self.failed_plan_handler(
+                response, 
+                error_msg=PlannerResponseTypes.TRANSFORM_FAILURE, 
+                args=[str(ex)], 
+                goal_handle=goal_handle
+            )
 
         # Retrieve agent/obstacle locations in arena
         try:
@@ -209,11 +214,11 @@ class Planner(Node):
     
     def failed_plan_handler(
         self,
-        response: PlanRequest.Response, 
+        response: PlanRequest.Result, 
         error_msg: str, 
         args: List[str],
         goal_handle
-    ) -> PlanRequest.Response:
+    ) -> PlanRequest.Result:
         response.error_msg = error_msg
         response.args = args
         # Publish no plan
