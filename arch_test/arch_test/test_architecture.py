@@ -20,7 +20,6 @@ def test_planner_publishing():
     a_04_executor = AgentTestExecutor("A_04")
     node_list = [
         manager, 
-        planner, 
         goal_publisher, 
         a_01_executor,
         a_02_executor,
@@ -37,9 +36,14 @@ def test_planner_publishing():
         FixedFrameBroadcaster("arena", "O_04", Vector3(x=450.0, z=0.0, y=450.0)),
         FixedFrameBroadcaster("arena", "O_05", Vector3(x=550.0, z=0.0, y=450.0))
     ]
+
+    executor = rclpy.executors.MultiThreadedExecutor()
+    executor.add_node(planner)
+    executor_thread = Thread(target=executor.spin, daemon=True)
     thread_pool = SingleThreadNodePool()
     thread_pool.add_nodes(*node_list)
 
+    executor_thread.start()
     thread_pool.start()
     sleep(0.5)
 
@@ -71,8 +75,10 @@ def test_planner_publishing():
     
     assert len(manager.unassigned_goals) == 1
 
+    executor.shutdown()
     thread_pool.stop()
     rclpy.shutdown()
+    executor_thread.join()
 
 
 def main(args=None):

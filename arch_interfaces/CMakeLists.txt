@@ -41,8 +41,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/AssignedGoal.msg"
   "msg/AssignedPath.msg"
   "msg/AgentPaths.msg"
-  "srv/PlanRequest.srv"
   "srv/AgentRequest.srv"
+  "action/PlanRequest.action"
   DEPENDENCIES geometry_msgs
 )
 

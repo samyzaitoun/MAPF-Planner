@@ -8,12 +8,8 @@ class PlannerResponseTypes:
     FAILED_MAP_SOLVE = "FAILED_MAP_SOLVE"
     INVALID_INPUT = "INVALID_INPUT"
 
-MOCAP = "mocap"
 
 class Planner(Node):
-    """
-    The Planner component node implementation
-    """
 
     plan_subscription: Subscription = None
     tf_subscription: Subscription = None
@@ -23,8 +19,14 @@ class Planner(Node):
 
         self.load_launch_parameters()
 
-        self.plan_srv: Service = self.create_service(
-            PlanRequest, "plan_request", self.plan_callback
+        self.action_server = ActionServer(
+            self,
+            PlanRequest,
+            "plan_request",
+            execute_callback=self.plan_callback,
+            goal_callback=self.goal_callback,
+            cancel_callback=self.cancel_callback,
+            callback_group=ReentrantCallbackGroup()
         )
 
         self.rows = int(self.arena_height / self.agent_diameter)
@@ -64,6 +66,12 @@ class Planner(Node):
             self.get_parameter("agent_diameter").get_parameter_value().integer_value
         )
 
+        ## Ignored TF IDs
+        self.declare_parameter("ignored_tf_ids", DEFAULT_IGNORED_IDS)
+        self.ignored_tf_ids: str = (
+            self.get_parameter("ignored_tf_ids").get_parameter_value().string_value
+        )
+
         ## MAPF Algorithm Class
         self.declare_parameter("mapf_solver", DEFAULT_MAPF_ALGORITHM)
         self.mapf_solver_class: str = (
@@ -94,28 +102,48 @@ class Planner(Node):
             self.get_parameter("time_limit").get_parameter_value().double_value
         )
 
-    def plan_callback(self, request, response):
+    # These are related to the action server callbacks
+    def goal_callback(self, goal_request):
+        """Accept or reject a client request to begin an action."""
+        # This server allows multiple goals in parallel
+        self.get_logger().debug('Received plan request')
+        return GoalResponse.ACCEPT
 
-        self.get_logger().info("Plan callback triggered")
+    def cancel_callback(self, goal_handle):
+        """Accept or reject a client request to cancel an action."""
+        self.get_logger().debug('Received cancel request')
+        return CancelResponse.ACCEPT
+
+    def plan_callback(self, goal_handle):
+
+        self.get_logger().debug("Plan callback triggered")
 
         # Extract message arguments
+        request = goal_handle.request
         assigned_goals: List[AssignedGoal] = request.assigned_goals
         unassigned_goals: Iterable[Position] = request.unassigned_goals
         unassigned_agents: Iterable[str] = request.unassigned_agents
+
+        response = PlanRequest.Result()
 
         if unassigned_agents == [] or unassigned_goals == []:
             return self.failed_plan_handler(
                 response,
                 error_msg=PlannerResponseTypes.INVALID_INPUT,
-                args=[]
+                args=[],
+                goal_handle=goal_handle
             )
         
         agent_ids = unassigned_agents + [m.agent_id for m in assigned_goals]
         try:
             obstacle_ids = self.get_all_frame_ids().difference(agent_ids + [self.arena_frame])
-            self.get_logger().info(f"Obstacle IDs: {obstacle_ids}")
         except AttributeError as ex:
-            return self.failed_plan_handler(response, PlannerResponseTypes.TRANSFORM_FAILURE, [str(ex)])
+            return self.failed_plan_handler(
+                response, 
+                error_msg=PlannerResponseTypes.TRANSFORM_FAILURE, 
+                args=[str(ex)], 
+                goal_handle=goal_handle
+            )
 
         # Retrieve agent/obstacle locations in arena
         try:
@@ -127,7 +155,8 @@ class Planner(Node):
             return self.failed_plan_handler(
                 response, 
                 error_msg=PlannerResponseTypes.TRANSFORM_FAILURE, 
-                args=[str(ex)] + agent_ids + list(obstacle_ids)
+                args=[str(ex)] + agent_ids + list(obstacle_ids),
+                goal_handle=goal_handle
             )
 
         # Assign goals
@@ -139,7 +168,12 @@ class Planner(Node):
             )
             assigned_goals += newly_assigned_goals
         except AssigningGoalsException as ex:
-            return self.failed_plan_handler(response, PlannerResponseTypes.FAILED_GOAL_ASSIGN, [str(ex)])
+            return self.failed_plan_handler(
+                response, 
+                error_msg=PlannerResponseTypes.FAILED_GOAL_ASSIGN, 
+                args=[str(ex)], 
+                goal_handle=goal_handle
+            )
 
         # In case of successful planning, manager needs to know who was assigned to what
         response.assigned_goals = assigned_goals
@@ -153,31 +187,43 @@ class Planner(Node):
         # Solve MAPF using data
         try:
             mapf_solution = self.generate_and_solve_map(
-                agent_transformations, assigned_goals, obstacle_transformations
+                agent_transformations, assigned_goals, obstacle_transformations, goal_handle
             )
+        except RequestAborted as ex:
+            goal_handle.canceled()
+            self.get_logger().debug("Plan request aborted!")
+            return response
         except MapfException as ex:
-            return self.failed_plan_handler(response, PlannerResponseTypes.FAILED_MAP_SOLVE, [str(ex)])
+            return self.failed_plan_handler(
+                response, 
+                error_msg=PlannerResponseTypes.FAILED_MAP_SOLVE, 
+                args=[str(ex)], 
+                goal_handle=goal_handle
+            )
 
         agent_paths: List[Path] = mapf_solution.paths
 
         response.error_msg = PlannerResponseTypes.SUCCESS
         response.args = [str(mapf_solution.sum_of_costs), str(mapf_solution.cpu_time)]
         response.plan = self.get_plan_from_solution(agent_paths, assigned_goals)
-        self.get_logger().info("Plan request successful!")
+        self.get_logger().debug("Plan request successful!")
+        goal_handle.succeed()
 
         return response
     
     def failed_plan_handler(
         self,
-        response: PlanRequest.Response, 
+        response: PlanRequest.Result, 
         error_msg: str, 
-        args: List[str]
-    ) -> PlanRequest.Response:
+        args: List[str],
+        goal_handle
+    ) -> PlanRequest.Result:
         response.error_msg = error_msg
         response.args = args
         # Publish no plan
         response.plan = AgentPaths()
-        self.get_logger().info("Plan request failed!")
+        self.get_logger().debug("Plan request failed!")
+        goal_handle.succeed()
         return response
     
     def get_all_frame_ids(self) -> Set[str]:
@@ -185,7 +231,7 @@ class Planner(Node):
             [
                 frame_id for frame_id in (yaml.safe_load(
                     self.tf_buffer.all_frames_as_yaml()
-                ).keys()) if MOCAP not in frame_id
+                ).keys()) if self.ignored_tf_ids not in frame_id
             ]
         )
     
@@ -213,6 +259,7 @@ class Planner(Node):
         agent_transforms: Dict[str, TransformStamped],
         assigned_goals: List[Tuple[str, Position]],
         obstacle_transforms: Dict[str, TransformStamped],
+        goal_handle
     ) -> MAPFOutput:
         """
         In our lab enviornement, our "relative" view point captures & publishes agent transformations
@@ -254,7 +301,7 @@ class Planner(Node):
             for obstacle in obstacle_transforms.values()
         ]
 
-        self.get_logger().info(
+        self.get_logger().debug(
             f"""
             DISCRETE_AGENTS: {discrete_agents}
             DISCRETE_GOALS: {discrete_goals}
@@ -273,7 +320,7 @@ class Planner(Node):
         map_str = "\n"
         for row in obstacle_map:
             map_str += str(row) + '\n'
-        self.get_logger().info(map_str)
+        self.get_logger().debug(map_str)
 
         mapf_instance = MapfInstance()
         mapf_instance.map = obstacle_map
@@ -287,7 +334,7 @@ class Planner(Node):
         )
 
         # The following method call can throw (up)
-        return mapf_solver.solve(mapf_input)
+        return mapf_solver.solve(mapf_input, cancel_indicator=goal_handle)
 
     def extract_x_and_y_dims(self, frame: TransformStamped) -> Tuple[int, int]:
         return (
@@ -337,13 +384,13 @@ def main(args=None):
 
     planner = Planner()
 
-    try:
-        rclpy.spin(planner)
-    except KeyboardInterrupt:
-        pass
+    executor = rclpy.executors.MultiThreadedExecutor()
+    executor.add_node(planner)
+    executor_thread = Thread(target=executor.spin, daemon=True)
 
-    planner.destroy_node()
+    executor.shutdown()
     rclpy.shutdown()
+    executor_thread.join()
 
 
 if __name__ == '__main__':
