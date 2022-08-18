@@ -1,8 +1,5 @@
 
 from .planner_config import *
-from rclpy.action import GoalResponse, CancelResponse, ActionServer
-from rclpy.callback_groups import ReentrantCallbackGroup
-from arch_interfaces.action import PlanRequest
 
 class PlannerResponseTypes:
     SUCCESS = "SUCCESS"
@@ -11,12 +8,8 @@ class PlannerResponseTypes:
     FAILED_MAP_SOLVE = "FAILED_MAP_SOLVE"
     INVALID_INPUT = "INVALID_INPUT"
 
-MOCAP = "mocap"
 
 class Planner(Node):
-    """
-    The Planner component node implementation
-    """
 
     plan_subscription: Subscription = None
     tf_subscription: Subscription = None
@@ -73,6 +66,12 @@ class Planner(Node):
             self.get_parameter("agent_diameter").get_parameter_value().integer_value
         )
 
+        ## Ignored TF IDs
+        self.declare_parameter("ignored_tf_ids", DEFAULT_IGNORED_IDS)
+        self.ignored_tf_ids: str = (
+            self.get_parameter("ignored_tf_ids").get_parameter_value().string_value
+        )
+
         ## MAPF Algorithm Class
         self.declare_parameter("mapf_solver", DEFAULT_MAPF_ALGORITHM)
         self.mapf_solver_class: str = (
@@ -107,17 +106,17 @@ class Planner(Node):
     def goal_callback(self, goal_request):
         """Accept or reject a client request to begin an action."""
         # This server allows multiple goals in parallel
-        self.get_logger().info('Received plan request')
+        self.get_logger().debug('Received plan request')
         return GoalResponse.ACCEPT
 
     def cancel_callback(self, goal_handle):
         """Accept or reject a client request to cancel an action."""
-        self.get_logger().info('Received cancel request')
+        self.get_logger().debug('Received cancel request')
         return CancelResponse.ACCEPT
 
     def plan_callback(self, goal_handle):
 
-        self.get_logger().info("Plan callback triggered")
+        self.get_logger().debug("Plan callback triggered")
 
         # Extract message arguments
         request = goal_handle.request
@@ -192,7 +191,7 @@ class Planner(Node):
             )
         except RequestAborted as ex:
             goal_handle.canceled()
-            self.get_logger().info("Plan request aborted!")
+            self.get_logger().debug("Plan request aborted!")
             return response
         except MapfException as ex:
             return self.failed_plan_handler(
@@ -207,7 +206,7 @@ class Planner(Node):
         response.error_msg = PlannerResponseTypes.SUCCESS
         response.args = [str(mapf_solution.sum_of_costs), str(mapf_solution.cpu_time)]
         response.plan = self.get_plan_from_solution(agent_paths, assigned_goals)
-        self.get_logger().info("Plan request successful!")
+        self.get_logger().debug("Plan request successful!")
         goal_handle.succeed()
 
         return response
@@ -223,7 +222,7 @@ class Planner(Node):
         response.args = args
         # Publish no plan
         response.plan = AgentPaths()
-        self.get_logger().info("Plan request failed!")
+        self.get_logger().debug("Plan request failed!")
         goal_handle.succeed()
         return response
     
@@ -232,7 +231,7 @@ class Planner(Node):
             [
                 frame_id for frame_id in (yaml.safe_load(
                     self.tf_buffer.all_frames_as_yaml()
-                ).keys()) if MOCAP not in frame_id
+                ).keys()) if self.ignored_tf_ids not in frame_id
             ]
         )
     
@@ -302,7 +301,7 @@ class Planner(Node):
             for obstacle in obstacle_transforms.values()
         ]
 
-        self.get_logger().info(
+        self.get_logger().debug(
             f"""
             DISCRETE_AGENTS: {discrete_agents}
             DISCRETE_GOALS: {discrete_goals}
@@ -321,7 +320,7 @@ class Planner(Node):
         map_str = "\n"
         for row in obstacle_map:
             map_str += str(row) + '\n'
-        self.get_logger().info(map_str)
+        self.get_logger().debug(map_str)
 
         mapf_instance = MapfInstance()
         mapf_instance.map = obstacle_map
@@ -385,13 +384,13 @@ def main(args=None):
 
     planner = Planner()
 
-    try:
-        rclpy.spin(planner)
-    except KeyboardInterrupt:
-        pass
+    executor = rclpy.executors.MultiThreadedExecutor()
+    executor.add_node(planner)
+    executor_thread = Thread(target=executor.spin, daemon=True)
 
-    planner.destroy_node()
+    executor.shutdown()
     rclpy.shutdown()
+    executor_thread.join()
 
 
 if __name__ == '__main__':
