@@ -6,6 +6,6 @@
 
 ## Project Dependencies: 
 * MAP-Solver By Gil Kaplan: https://gitlab.com/Gil-kapel/mapf-solver
-(commit SHA d4bb38b760cbdfb850e46832307deabd0de6935e, since there's no releases)
+(We're using a slightly alternated version, released at https://gitlab.com/rooren/mapf-solver/ v1.0.0)
 
  By: Samy Zaitoun, Oren Rosenberg 
