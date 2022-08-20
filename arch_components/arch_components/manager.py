@@ -176,6 +176,7 @@ class Manager(Node):
         self.get_logger().info("---Calling Plan Request---")
         if self.future_response and not self.future_response.done():
             self.goal_handle.cancel_goal_async()
+            self.future_response.cancel()
         
         self.send_plan_request()
 
@@ -202,7 +203,6 @@ class Manager(Node):
         # sync request
         self.future_goal = self.action_cli.send_goal_async(pr)
         self.future_goal.add_done_callback(self.goal_response_callback)
-        self.future_response = None
     
     def goal_response_callback(self, future_goal: Future) -> None:
         goal_handle = future_goal.result()
@@ -219,7 +219,10 @@ class Manager(Node):
         Updates internal dataset with accordance to the results & publishes them
         (Only if it passes the result validity check)
         """
-        if future_response != self.future_response: # Checks if a new request was done & callback still exists
+        if (
+            future_response != self.future_response # Checks if a new request was done & callback still exists
+            or not future_response.done()
+        ):
             self.get_logger().info(f"Ignoring Plan-done callback")
             return
 

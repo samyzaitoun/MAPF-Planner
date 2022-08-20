@@ -68,16 +68,20 @@ def test_goal_input():
 
     executor = rclpy.executors.MultiThreadedExecutor()
     executor.add_node(planner)
-    executor.add_node(manager)
     executor.add_node(goal_publisher)
+    thread_pool = SingleThreadNodePool()
+    thread_pool.add_nodes(manager)
+
     executor_thread = Thread(target=executor.spin, daemon=True)
+    thread_pool.start()
     executor_thread.start()
 
     goal_1 = Position(x=50.0, y=50.0, w=1.0)
     goal_publisher.publish_goal(goal_1)
-    sleep(0.5)
-    assert manager.unassigned_goals == [goal_1]
+    while manager.unassigned_goals != [goal_1]:
+        sleep(0.1)
     
+    thread_pool.stop()
     executor.shutdown()
     rclpy.shutdown()
     executor_thread.join()
