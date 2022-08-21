@@ -262,10 +262,7 @@ class Planner(Node):
         goal_handle
     ) -> MAPFOutput:
         """
-        In our lab enviornement, our "relative" view point captures & publishes agent transformations
-        on the X & Z axis. X, being the same & Z playing the role of Y.
-        This is important because this will look a bit weird for someone who's spectating this code on the outside.
-        One assumption we make is that given the mocap coordinates (which acts as the start of the axises, (0,0)), all agents
+        An assumption we make is that given the mocap coordinates (which acts as the start of the axises, (0,0)), all agents
         appear on the first quadrant, relative to the mocap view point.
         Example:
                         ^
@@ -385,12 +382,13 @@ def main(args=None):
     planner = Planner()
 
     executor = rclpy.executors.MultiThreadedExecutor()
-    executor.add_node(planner)
-    executor_thread = Thread(target=executor.spin, daemon=True)
+    try:
+        rclpy.spin(planner, executor=executor)
+    except KeyboardInterrupt:
+        pass
 
     executor.shutdown()
     rclpy.shutdown()
-    executor_thread.join()
 
 
 if __name__ == '__main__':
